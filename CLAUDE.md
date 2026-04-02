@@ -1,8 +1,11 @@
 # CLAUDE.md — Class 2026 Marketing Budget Tracker
 
-## FIRST: Read Session Context
+## FIRST: Read These Two Documents
 
-**Before doing anything, read `docs/session-context.md`.** It contains the complete conversation history, all decisions Russell made, the $35K gap analysis, vendor savings data, headcount details, and Russell's specific feedback on the current UI. This is the most important file in the repo for understanding what to build.
+1. **`docs/product-vision.md`** — Russell's detailed vision in his own words. Covers the calendar/timeline view, actuals vs forecast distinction, Q4 carryover argument, scenario planner, software savings narrative, audience filtering, and UI/UX requirements. This is the north star.
+2. **`docs/session-context.md`** — Complete conversation history: all decisions, the $35K gap analysis, vendor savings data, headcount details, and prioritized next steps.
+
+Read both before writing any code.
 
 ## Project Overview
 
@@ -12,7 +15,7 @@ Interactive web application for tracking, reconciling, and managing the 2026 Cla
 
 - `index.html` — The working app (v2). Functional but needs UI/UX redesign. Too much whitespace, too "AI vibe-coded". Needs to look more like a spreadsheet/Excel — compact, data-dense, professional.
 - `v1-reference.html` — The v1 dashboard Russell liked. Use this as the design reference. Copy its CSS design system, spacing, font sizes, table density. The v1 has 12px body font, 8px table cell padding, compact KPI cards, tight header. This is the target aesthetic.
-- `docs/` — Architecture, data model, design system, Sheets API setup, and full session context.
+- `docs/` — Architecture, data model, design system, Sheets API setup, product vision, and full session context.
 
 ## Priority 1: UI/UX Redesign
 
@@ -95,10 +98,11 @@ class-budget-tracker/
 ├── CLAUDE.md               # This file
 ├── README.md               # Project readme
 └── docs/
+    ├── product-vision.md   # Russell's detailed vision (START HERE)
+    ├── session-context.md  # Full conversation history & decisions
     ├── architecture.md     # App architecture & data flow
     ├── data-model.md       # Google Sheets schema (all 5 tabs)
     ├── design-system.md    # Complete CSS design system from v1
-    ├── session-context.md  # FULL conversation history & decisions
     └── sheets-setup.md     # Google API credentials setup guide
 ```
 
