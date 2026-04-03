@@ -1,6 +1,6 @@
 /* ============================================================
-   CLASS 2026 MARKETING BUDGET TRACKER — APPLICATION v3
-   Excel-style editing, 3-level calendar zoom, SW portfolio manager
+   CLASS 2026 MARKETING BUDGET TRACKER — APPLICATION v4
+   4-tab Budget Command Center: Dashboard, Budget, Expenses, Software
    ============================================================ */
 'use strict';
 
@@ -12,7 +12,7 @@ const CONFIG = {
     CLIENT_ID: '1068018362027-1jmc2pq0ttv5tabrplgqscp7o7vqg0oi.apps.googleusercontent.com',
     SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
     API_BASE: 'https://sheets.googleapis.com/v4/spreadsheets',
-    SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B'],
+    SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B', 'Vendor Budgets!A:H'],
     MONTHS: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     QUARTERS: { Q1: ['Jan', 'Feb', 'Mar'], Q2: ['Apr', 'May', 'Jun'], Q3: ['Jul', 'Aug', 'Sep'], Q4: ['Oct', 'Nov', 'Dec'] },
     BUDGET: { headcount: 336000, programs: 90000, te: 20000, total: 446914 },
@@ -28,6 +28,12 @@ const CONFIG = {
         '6402': { cat: 'Programs', sub: 'Consulting' },
         '6405': { cat: 'Programs', sub: 'Conferences/Events' },
         '6406': { cat: 'Programs', sub: 'Advertising' }
+    },
+    SUBCATEGORIES: {
+        'Programs': ['Events', 'Mktg Ops', 'Advertising', 'Webinars', 'Consulting', 'Conferences/Events'],
+        'T&E': ['Lodging', 'Meals', 'Travel'],
+        'Headcount': ['Salary', 'Payroll Tax', 'Benefits', 'Bonus', 'Commissions'],
+        'Outside Envelope': ['Software Subscriptions', 'Prepaid']
     }
 };
 
@@ -39,6 +45,7 @@ const appState = {
     budget: [],
     commitments: [],
     vendorContracts: [],
+    vendorBudgets: [],
     config: {},
     computed: {
         ytdActual: { total: 0, headcount: 0, programs: 0, te: 0, outside: 0 },
@@ -65,16 +72,18 @@ const appState = {
     presentationMode: false,
     txFilters: { search: '', category: '', quarter: '', status: '' },
     txSort: { col: null, dir: 'asc' },
-    scenarioInput: { amount: 0, category: 'Programs', quarter: 'Q2', description: '' },
-    // v3: Inline editing
+    // v4: Inline editing
     inlineEdit: { active: false, rowId: null, field: null, originalValue: null, element: null },
-    // v3: Calendar zoom
+    // v4: Calendar zoom
     calendarZoom: 'annual',
     calendarQuarter: null,
     calendarMonth: null,
     calendarCollapsed: {},
-    // v3: Software modeling
-    swModeling: { proposals: {}, showProposed: true }
+    // v4: Budget modeling
+    draftItems: [],
+    disabledVendors: {},
+    // v4: SW forecasting
+    swForecasts: {}
 };
 
 // ============================================================
@@ -142,18 +151,25 @@ function timeAgo(date) {
     const hrs = Math.floor(mins / 60); if (hrs < 24) return hrs + 'h ago';
     return Math.floor(hrs / 24) + 'd ago';
 }
+function matchVendor(budgetName, txName) {
+    if (!budgetName || !txName) return false;
+    const bn = budgetName.toLowerCase().trim();
+    const tn = txName.toLowerCase().trim();
+    if (bn === tn) return true;
+    if (tn.startsWith(bn) || bn.startsWith(tn)) return true;
+    if (tn.includes(bn) || bn.includes(tn)) return true;
+    return false;
+}
 
 // ============================================================
 // 4. TOAST NOTIFICATIONS
 // ============================================================
 function showToast(message, type = 'info', duration = 4000) {
     const container = document.getElementById('toastContainer');
-    const icons = { success: 'check-circle', error: 'alert-circle', warning: 'alert-triangle', info: 'info' };
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.innerHTML = `<i data-lucide="${icons[type] || 'info'}" class="toast-icon"></i><span class="toast-message">${esc(message)}</span><button class="toast-dismiss" onclick="this.parentElement.remove()">&times;</button>`;
+    toast.innerHTML = `<span class="toast-message">${esc(message)}</span><button class="toast-dismiss" onclick="this.parentElement.remove()">&times;</button>`;
     container.appendChild(toast);
-    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
     setTimeout(() => { toast.classList.add('removing'); setTimeout(() => toast.remove(), 200); }, duration);
 }
 
@@ -198,7 +214,7 @@ async function fetchAllSheets() {
         const data = await resp.json(); const rd = data.valueRanges || [];
         parseTransactions(rd[0]?.values || []); parseBudget(rd[1]?.values || []);
         parseCommitments(rd[2]?.values || []); parseVendorContracts(rd[3]?.values || []);
-        parseConfig(rd[4]?.values || []);
+        parseConfig(rd[4]?.values || []); parseVendorBudgets(rd[5]?.values || []);
         appState.lastSynced = new Date(); recompute(); renderActiveTab();
         showToast('Data loaded from Google Sheets', 'success');
     } catch (err) { console.error(err); showToast('Failed to load from Sheets. Using fallback.', 'warning'); loadFallbackData(); }
@@ -266,6 +282,14 @@ function parseConfig(rows) {
     if (!rows || rows.length < 1) return;
     appState.config = {}; rows.forEach(r => { if (r[0]) appState.config[r[0]] = r[1] || ''; });
 }
+function parseVendorBudgets(rows) {
+    if (!rows || rows.length < 2) return;
+    appState.vendorBudgets = rows.slice(1).map(r => ({
+        vendor: r[0] || '', subcategory: r[1] || '', category: r[2] || 'Programs',
+        q1: parseNum(r[3]), q2: parseNum(r[4]), q3: parseNum(r[5]), q4: parseNum(r[6]),
+        notes: r[7] || ''
+    })).filter(v => v.vendor);
+}
 
 // ============================================================
 // 8. FALLBACK DATA
@@ -326,6 +350,8 @@ function loadFallbackData() {
         txn('03/20/2026', 'Paperclip Promotions', 300, '6406', 'Advertising', '405-Community & Advocacy', 'Promo items', 'Programs', 'Advertising', 'Mar', 'Q1', 2026),
         txn('02/12/2026', 'Hotel - Sales Kickoff', 1200, '6202', 'Lodging', '400-Marketing', 'Team travel', 'T&E', 'Lodging', 'Feb', 'Q1', 2026),
         txn('03/18/2026', 'Hotel - Conference', 800, '6202', 'Lodging', '401-Education Marketing', 'Event travel', 'T&E', 'Lodging', 'Mar', 'Q1', 2026),
+        txn('02/15/2026', 'Ed Miller - Client Dinner', 3200, '6202', 'Lodging', '400-Marketing', 'SKO dinner', 'T&E', 'Lodging', 'Feb', 'Q1', 2026),
+        txn('03/22/2026', 'Ed Miller - Travel', 2071, '6202', 'Lodging', '400-Marketing', 'Conference travel', 'T&E', 'Lodging', 'Mar', 'Q1', 2026),
         txn('01/01/2026', 'Pantheon', 1452.17, '6303', 'Software Subscriptions', '400-Marketing', 'Website CMS', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
         txn('01/01/2026', 'HubSpot', 1333.33, '6303', 'Software Subscriptions', '403-Mktg Ops', 'Marketing automation', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
         txn('01/01/2026', 'Salesforce', 4372.58, '6303', 'Software Subscriptions', '403-Mktg Ops', 'CRM', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
@@ -364,6 +390,16 @@ function loadFallbackData() {
         { vendor: 'Wrike', before: 17600, after: 0, savings: 17600, savingsPct: '100%', category: 'PM Tool', status: 'Eliminated', notes: 'Migrated', contractEnd: '2025-12-31', renegDate: null, newTargetAnnual: null },
         { vendor: 'Bynder', before: 11800, after: 0, savings: 11800, savingsPct: '100%', category: 'DAM', status: 'Eliminated', notes: 'No longer needed', contractEnd: '2025-12-31', renegDate: null, newTargetAnnual: null },
         { vendor: 'LinkedIn Sales Nav', before: 39900, after: 0, savings: 39900, savingsPct: '100%', category: 'Sales Tool', status: 'Eliminated', notes: 'Consolidated', contractEnd: '2025-12-31', renegDate: null, newTargetAnnual: null },
+    ];
+    appState.vendorBudgets = [
+        { vendor: 'Paperclip Promotions', subcategory: 'Events', category: 'Programs', q1: 900, q2: 900, q3: 900, q4: 900, notes: 'Event materials ~$300/mo' },
+        { vendor: 'Docebo Annual Conference', subcategory: 'Events', category: 'Programs', q1: 0, q2: 0, q3: 12000, q4: 0, notes: 'Draft - annual conference' },
+        { vendor: 'Sponge Software', subcategory: 'Mktg Ops', category: 'Programs', q1: 15400, q2: 0, q3: 0, q4: 0, notes: 'Terminated after Q1' },
+        { vendor: 'LinkedIn Ads', subcategory: 'Advertising', category: 'Programs', q1: 2850, q2: 2850, q3: 2850, q4: 2850, notes: 'Monthly recurring' },
+        { vendor: 'Google Ads', subcategory: 'Advertising', category: 'Programs', q1: 2550, q2: 2550, q3: 2550, q4: 2550, notes: 'Monthly recurring' },
+        { vendor: 'Sponsored Webinar Series', subcategory: 'Webinars', category: 'Programs', q1: 0, q2: 8000, q3: 0, q4: 0, notes: 'Draft - proposed Q2' },
+        { vendor: 'Training Magazine', subcategory: 'Events', category: 'Programs', q1: 8744, q2: 0, q3: 9000, q4: 0, notes: 'Conference + webinar' },
+        { vendor: 'EMEA Reseller Offsite', subcategory: 'Events', category: 'Programs', q1: 6919, q2: 0, q3: 0, q4: 0, notes: 'One-time Q1 event' },
     ];
     appState.config = {
         total_budget: '446914', headcount_budget: '336000', programs_budget: '90000', te_budget: '20000',
@@ -471,21 +507,23 @@ function switchTab(tab) {
     renderActiveTab();
 }
 function renderActiveTab() {
-    const renderers = { dashboard: renderDashboard, calendar: renderCalendar, transactions: renderTransactions, scenario: renderScenario, reconciliation: renderReconciliation, savings: renderSavings };
+    const renderers = {
+        dashboard: renderDashboard,
+        budget: renderCalendar,
+        expenses: renderExpenses,
+        software: renderSoftware
+    };
     const fn = renderers[appState.activeTab];
     if (fn) fn();
-    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 // ============================================================
 // 12. THEME / PRESENTATION / FRESHNESS
 // ============================================================
 function cycleTheme() {
-    const themes = ['', 'dark', 'high-contrast'];
+    const themes = ['', 'high-contrast'];
     appState.theme = themes[(themes.indexOf(appState.theme) + 1) % themes.length];
     document.documentElement.setAttribute('data-theme', appState.theme);
-    const icon = document.querySelector('#themeToggle i');
-    if (icon) { icon.setAttribute('data-lucide', appState.theme === 'dark' ? 'moon' : appState.theme === 'high-contrast' ? 'contrast' : 'sun'); if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [icon.parentElement] }); }
     renderActiveTab();
 }
 function togglePresentation() {
@@ -542,6 +580,10 @@ function startCellEdit(td, rowId, field, collection) {
         input = document.createElement('select');
         input.className = 'cell-editor';
         ['Actual', 'Outstanding'].forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; if (rawValue === v) o.selected = true; input.appendChild(o); });
+    } else if (field === 'category') {
+        input = document.createElement('select');
+        input.className = 'cell-editor';
+        ['Headcount', 'Programs', 'T&E', 'Outside Envelope'].forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; if (rawValue === v) o.selected = true; input.appendChild(o); });
     } else if (field === 'gl') {
         input = document.createElement('select');
         input.className = 'cell-editor';
@@ -575,6 +617,11 @@ function commitCellEdit() {
     if (!input) { cancelCellEdit(); return; }
     const newValue = input.value;
     const coll = edit.collection || 'transactions';
+    // Capture scroll position
+    const scrollEl = document.querySelector('.table-scroll') || document.querySelector('.calendar-container');
+    const scrollTop = scrollEl ? scrollEl.scrollTop : 0;
+    const scrollLeft = scrollEl ? scrollEl.scrollLeft : 0;
+
     if (coll === 'vendors') {
         const vendor = appState.vendorContracts[edit.rowId];
         if (!vendor) { cancelCellEdit(); return; }
@@ -583,12 +630,8 @@ function commitCellEdit() {
             if (edit.field === 'before' || edit.field === 'after') vendor.savings = vendor.before - vendor.after;
         } else if (edit.field === 'renegDate') {
             vendor.renegDate = newValue || null;
-            if (!appState.swModeling.proposals[vendor.vendor]) appState.swModeling.proposals[vendor.vendor] = {};
-            appState.swModeling.proposals[vendor.vendor].renegDate = newValue || null;
         } else if (edit.field === 'newTargetAnnual') {
             vendor.newTargetAnnual = parseFloat(newValue) || null;
-            if (!appState.swModeling.proposals[vendor.vendor]) appState.swModeling.proposals[vendor.vendor] = {};
-            appState.swModeling.proposals[vendor.vendor].newAnnual = parseFloat(newValue) || null;
         } else {
             vendor[edit.field] = newValue;
         }
@@ -596,7 +639,11 @@ function commitCellEdit() {
         const tx = appState.transactions.find(t => t._row === edit.rowId);
         if (!tx) { cancelCellEdit(); return; }
         if (edit.field === 'amount') tx.amount = parseFloat(newValue) || 0;
-        else if (edit.field === 'gl') {
+        else if (edit.field === 'category') {
+            tx.category = newValue;
+            const subMap = CONFIG.SUBCATEGORIES[newValue];
+            if (subMap && subMap.length > 0) tx.subcategory = subMap[0];
+        } else if (edit.field === 'gl') {
             tx.gl = newValue;
             const info = CONFIG.GL_MAP[newValue];
             if (info) { tx.category = info.cat; tx.subcategory = info.sub; tx.glName = info.sub; }
@@ -613,6 +660,11 @@ function commitCellEdit() {
     appState.inlineEdit = { active: false, rowId: null, field: null, originalValue: null, element: null, collection: null };
     recompute();
     renderActiveTab();
+    // Restore scroll
+    requestAnimationFrame(() => {
+        const el = document.querySelector('.table-scroll') || document.querySelector('.calendar-container');
+        if (el) { el.scrollTop = scrollTop; el.scrollLeft = scrollLeft; }
+    });
 }
 
 function cancelCellEdit() {
@@ -645,81 +697,140 @@ function renderDashboard() {
     const wf = c.programsWaterfall;
     const progPct = wf.budget > 0 ? (wf.budget - wf.available) / wf.budget : 0;
     const progAvailPct = wf.budget > 0 ? wf.available / wf.budget : 0;
+    const tePct = CONFIG.BUDGET.te > 0 ? c.ytdActual.te / CONFIG.BUDGET.te : 0;
+    const totalSavings = appState.vendorContracts.reduce((s, v) => s + v.savings, 0);
+
     let html = '<div class="kpi-grid">';
+    // Hero: Programs Available
     html += `<div class="kpi-card hero ${wf.available < 10000 ? 'warning' : 'positive'}"><div class="kpi-label">Programs Available</div><div class="kpi-value">${fmtWhole(wf.available)}</div><div class="kpi-progress"><div class="kpi-progress-bar ${progressColor(progPct)}" style="width:${Math.min(progPct * 100, 100)}%"></div></div><div class="kpi-subtext">${fmtPct(progAvailPct)} of ${fmtWhole(wf.budget)} remaining</div></div>`;
-    html += `<div class="kpi-card"><div class="kpi-label">Total Budget</div><div class="kpi-value">${fmtWhole(CONFIG.BUDGET.total)}</div><div class="kpi-trend neutral">FY 2026</div></div>`;
-    html += `<div class="kpi-card"><div class="kpi-label">YTD Actual</div><div class="kpi-value">${fmtWhole(c.ytdActual.total)}</div><div class="kpi-trend neutral">Through ${getCurrentMonth()}</div></div>`;
-    const fullYear = c.ytdActual.total + c.forecast.total;
-    const fcastPct = CONFIG.BUDGET.total > 0 ? fullYear / CONFIG.BUDGET.total : 0;
-    html += `<div class="kpi-card ${fcastPct > 0.95 ? 'warning' : ''}"><div class="kpi-label">Full Year Forecast</div><div class="kpi-value">${fmtWhole(fullYear)}</div><div class="kpi-trend ${fcastPct > 1 ? 'negative' : fcastPct > 0.9 ? 'warning' : 'positive'}">${fmtPct(fcastPct)} of budget</div></div>`;
+    // Programs Q1
+    html += `<div class="kpi-card"><div class="kpi-label">Programs Q1</div><div class="kpi-value">${fmtWhole(c.ytdActual.programs)}</div><div class="kpi-trend neutral">Through ${getCurrentMonth()}</div></div>`;
+    // T&E Q1
+    html += `<div class="kpi-card ${tePct > 0.5 ? 'warning' : ''}"><div class="kpi-label">T&E Q1</div><div class="kpi-value">${fmtWhole(c.ytdActual.te)}</div><div class="kpi-progress"><div class="kpi-progress-bar ${progressColor(tePct)}" style="width:${Math.min(tePct * 100, 100)}%"></div></div><div class="kpi-subtext">of ${fmtWhole(CONFIG.BUDGET.te)}</div></div>`;
+    // Headcount Loaded
     if (showHC) {
         const hcPct = CONFIG.BUDGET.headcount > 0 ? c.ytdActual.headcount / CONFIG.BUDGET.headcount : 0;
-        html += `<div class="kpi-card"><div class="kpi-label">Headcount</div><div class="kpi-value">${fmtWhole(c.ytdActual.headcount)}</div><div class="kpi-progress"><div class="kpi-progress-bar ${progressColor(hcPct)}" style="width:${Math.min(hcPct * 100, 100)}%"></div></div><div class="kpi-subtext">of ${fmtWhole(CONFIG.BUDGET.headcount)}</div></div>`;
+        html += `<div class="kpi-card"><div class="kpi-label">Headcount Loaded</div><div class="kpi-value">${fmtWhole(c.ytdActual.headcount)}</div><div class="kpi-progress"><div class="kpi-progress-bar ${progressColor(hcPct)}" style="width:${Math.min(hcPct * 100, 100)}%"></div></div><div class="kpi-subtext">of ${fmtWhole(CONFIG.BUDGET.headcount)}</div></div>`;
     }
-    html += '</div><div class="chart-grid">';
-    html += `<div class="chart-card"><div class="chart-title">Programs Waterfall</div><div class="chart-wrapper"><canvas id="waterfallChart"></canvas></div></div>`;
-    html += `<div class="chart-card"><div class="chart-title">Spend by Category</div><div class="chart-wrapper"><canvas id="categoryChart"></canvas></div></div>`;
-    html += '</div><div class="chart-grid">';
-    html += `<div class="chart-card"><div class="chart-title">Monthly Trend</div><div class="chart-wrapper"><canvas id="trendChart"></canvas></div></div>`;
-    html += '<div class="chart-card"><div class="chart-title">Outstanding Items</div>';
-    if (c.outstandingItems.length === 0) html += '<div class="empty-state"><p>No outstanding items</p></div>';
-    else { html += '<table class="outstanding-table"><tbody>'; c.outstandingItems.forEach(t => { html += `<tr><td class="vendor-col">${esc(t.vendor)}</td><td class="amount-col">${fmt(t.amount)}</td><td class="month-col">${esc(t.month)} ${t.year}</td></tr>`; }); html += '</tbody></table>'; }
-    html += '</div></div>';
-    html += '<div class="section-card"><div class="section-title">Budget vs Actual</div>';
-    const bars = [{ l: 'Headcount', a: c.ytdActual.headcount, b: CONFIG.BUDGET.headcount, s: showHC }, { l: 'Programs', a: c.ytdActual.programs, b: CONFIG.BUDGET.programs, s: true }, { l: 'T&E', a: c.ytdActual.te, b: CONFIG.BUDGET.te, s: true }];
-    bars.forEach(bar => { if (!bar.s) return; const p = bar.b > 0 ? bar.a / bar.b : 0; html += `<div class="budget-progress-item"><div class="budget-progress-label">${bar.l}</div><div class="budget-progress-track"><div class="budget-progress-fill ${progressColor(p)}" style="width:${Math.min(p * 100, 100)}%"></div></div><div class="budget-progress-amount">${fmtWhole(bar.a)} / ${fmtWhole(bar.b)}</div></div>`; });
-    html += '<div class="basis-note">Basis: salary-only (pending confirmation from Brian)</div></div>';
+    // SW Savings
+    html += `<div class="kpi-card positive"><div class="kpi-label">SW Savings</div><div class="kpi-value">${fmtWhole(totalSavings)}</div><div class="kpi-trend positive">${appState.vendorContracts.length} vendors renegotiated</div></div>`;
+    html += '</div>';
+
+    // Charts row 1: Monthly Stacked + Cumulative
+    html += '<div class="chart-grid">';
+    html += `<div class="chart-card"><div class="chart-title">Monthly Spend (Programs + T&E)</div><div class="chart-wrapper"><canvas id="monthlyStackChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Cumulative vs Budget Pace</div><div class="chart-wrapper"><canvas id="cumulativeChart"></canvas></div></div>`;
+    html += '</div>';
+
+    // Charts row 2: Utilization Gauges + Allocation
+    html += '<div class="chart-grid">';
+    html += `<div class="chart-card"><div class="chart-title">Category Utilization</div><div class="chart-wrapper"><canvas id="utilizationChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Programs Allocation by Subcategory</div><div class="chart-wrapper"><canvas id="allocationChart"></canvas></div></div>`;
+    html += '</div>';
+
+    // Assumptions panel
+    html += '<div class="section-card"><details class="assumptions-panel"><summary>Budget Assumptions</summary><div class="assumptions-list"><ul>';
+    html += '<li>Programs budget adjusted to $90K (from original $180K planning figure)</li>';
+    html += '<li>Headcount on salary-only basis pending confirmation from Brian</li>';
+    html += '<li>Outside Envelope items (SW subs, prepaid) NOT counted against $446K envelope</li>';
+    html += '<li>Sponge Software terminated after Q1 ($7,700 outstanding in March)</li>';
+    html += '<li>Kate Bertram: PT contractor, no fully-loaded cost multiplier applied</li>';
+    html += '<li>T&E includes Ed Miller one-time events (SKO dinner, conference travel)</li>';
+    html += '<li>Q4 2025 data included for carryover context only</li>';
+    html += '</ul></div></details></div>';
+
     el.innerHTML = html;
     renderDashboardCharts();
 }
 
 function renderDashboardCharts() {
-    destroyChart('waterfall'); destroyChart('category'); destroyChart('trend');
-    const c = appState.computed; const wf = c.programsWaterfall;
-    const isDark = appState.theme === 'dark' || appState.theme === 'high-contrast';
-    const textColor = isDark ? '#e7e9ea' : '#0A1849';
-    const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+    destroyChart('monthlyStack'); destroyChart('cumulative'); destroyChart('utilization'); destroyChart('allocation');
+    const c = appState.computed;
+    const textColor = '#0A1849';
+    const gridColor = 'rgba(0,0,0,0.06)';
     const fontOpts = { family: "'Inter', sans-serif", size: 10 };
-    // Waterfall
-    const wfCtx = document.getElementById('waterfallChart');
-    if (wfCtx) {
-        const afterSpent = wf.budget - wf.spent; const afterOut = afterSpent - wf.outstanding; const afterComm = afterOut - wf.committed;
-        appState.charts.waterfall = new Chart(wfCtx, { type: 'bar', data: { labels: ['Budget', 'Spent', 'Outstanding', 'Committed', 'Available'], datasets: [{ data: [[0, wf.budget], [afterSpent, wf.budget], [afterOut, afterSpent], [afterComm, afterOut], [0, wf.available]], backgroundColor: ['rgba(71,57,231,0.8)', 'rgba(220,38,38,0.8)', 'rgba(217,119,6,0.8)', 'rgba(107,114,128,0.7)', 'rgba(5,150,105,0.8)'], borderRadius: 2, borderSkipped: false }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmt(Math.abs(ctx.raw[1] - ctx.raw[0])) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } } });
-    }
-    // Category Doughnut
-    const catCtx = document.getElementById('categoryChart');
-    if (catCtx) {
-        const showHC = isHeadcountVisible();
-        const labels = showHC ? ['Headcount', 'Programs', 'T&E'] : ['Programs', 'T&E'];
-        const data = showHC ? [c.ytdActual.headcount, c.ytdActual.programs, c.ytdActual.te] : [c.ytdActual.programs, c.ytdActual.te];
-        const colors = showHC ? ['rgba(10,24,73,0.8)', 'rgba(71,57,231,0.8)', 'rgba(255,186,0,0.8)'] : ['rgba(71,57,231,0.8)', 'rgba(255,186,0,0.8)'];
-        appState.charts.category = new Chart(catCtx, { type: 'doughnut', data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0, hoverOffset: 3 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, padding: 8 } }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + fmt(ctx.raw) } } } } });
-    }
-    // Monthly Trend
-    const trendCtx = document.getElementById('trendChart');
-    if (trendCtx) {
-        const curIdx = getCurrentMonthIdx(); const actualData = []; const forecastData = [];
-        CONFIG.MONTHS.forEach((m, i) => {
-            const val = c.byMonth[m] ? c.byMonth[m].total : 0;
-            if (i <= curIdx && val > 0) { actualData.push(val); forecastData.push(null); }
-            else if (i > curIdx) {
-                actualData.push(null);
-                let committed = 0;
-                appState.commitments.forEach(cm => { if (cm.status !== 'Active' || cm.category === 'Outside Envelope') return; const si = monthIdx(cm.startMonth); const ei = monthIdx(cm.endMonth); if (i >= si && i <= ei) committed += cm.monthly; });
-                forecastData.push(committed);
-            } else { actualData.push(null); forecastData.push(null); }
+    const curIdx = getCurrentMonthIdx();
+
+    // 1. Monthly Stacked Bars (Programs + T&E)
+    const stackCtx = document.getElementById('monthlyStackChart');
+    if (stackCtx) {
+        const progData = CONFIG.MONTHS.map(m => c.byMonth[m] ? c.byMonth[m].programs : 0);
+        const teData = CONFIG.MONTHS.map(m => c.byMonth[m] ? c.byMonth[m].te : 0);
+        appState.charts.monthlyStack = new Chart(stackCtx, {
+            type: 'bar',
+            data: { labels: CONFIG.MONTHS, datasets: [
+                { label: 'Programs', data: progData, backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 },
+                { label: 'T&E', data: teData, backgroundColor: 'rgba(255,186,0,0.7)', borderRadius: 2 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
-        if (curIdx >= 0 && curIdx < 11 && actualData[curIdx] != null) forecastData[curIdx] = actualData[curIdx];
-        appState.charts.trend = new Chart(trendCtx, { type: 'line', data: { labels: CONFIG.MONTHS, datasets: [{ label: 'Actual', data: actualData, borderColor: 'rgba(71,57,231,1)', backgroundColor: 'rgba(71,57,231,0.08)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: false }, { label: 'Forecast', data: forecastData, borderColor: 'rgba(107,114,128,0.5)', borderDash: [6, 4], backgroundColor: 'rgba(107,114,128,0.03)', fill: true, tension: 0.3, pointRadius: 2, spanGaps: false }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmt(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } } });
+    }
+
+    // 2. Cumulative vs Pace
+    const cumCtx = document.getElementById('cumulativeChart');
+    if (cumCtx) {
+        const actualCum = []; const paceLine = [];
+        let runTotal = 0;
+        const monthlyBudget = (CONFIG.BUDGET.programs + CONFIG.BUDGET.te) / 12;
+        CONFIG.MONTHS.forEach((m, i) => {
+            const mTotal = c.byMonth[m] ? c.byMonth[m].programs + c.byMonth[m].te : 0;
+            if (i <= curIdx && mTotal > 0) { runTotal += mTotal; actualCum.push(runTotal); }
+            else actualCum.push(null);
+            paceLine.push(monthlyBudget * (i + 1));
+        });
+        appState.charts.cumulative = new Chart(cumCtx, {
+            type: 'line',
+            data: { labels: CONFIG.MONTHS, datasets: [
+                { label: 'Actual Cumulative', data: actualCum, borderColor: 'rgba(71,57,231,1)', backgroundColor: 'rgba(71,57,231,0.08)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: false },
+                { label: 'Budget Pace', data: paceLine, borderColor: 'rgba(107,114,128,0.4)', borderDash: [6, 4], pointRadius: 0, fill: false, tension: 0 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
+        });
+    }
+
+    // 3. Utilization Gauges (half-doughnut)
+    const utilCtx = document.getElementById('utilizationChart');
+    if (utilCtx) {
+        const progUsed = c.ytdActual.programs + (c.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0));
+        const progPct = CONFIG.BUDGET.programs > 0 ? progUsed / CONFIG.BUDGET.programs : 0;
+        const teUsed = c.ytdActual.te;
+        const tePctVal = CONFIG.BUDGET.te > 0 ? teUsed / CONFIG.BUDGET.te : 0;
+        appState.charts.utilization = new Chart(utilCtx, {
+            type: 'doughnut',
+            data: { labels: ['Programs Used', 'Programs Remaining', 'T&E Used', 'T&E Remaining'], datasets: [
+                { data: [Math.min(progPct, 1) * 100, Math.max(1 - progPct, 0) * 100], backgroundColor: ['rgba(71,57,231,0.8)', 'rgba(71,57,231,0.1)'], circumference: 180, rotation: 270, borderWidth: 0 },
+                { data: [Math.min(tePctVal, 1) * 100, Math.max(1 - tePctVal, 0) * 100], backgroundColor: ['rgba(255,186,0,0.8)', 'rgba(255,186,0,0.1)'], circumference: 180, rotation: 270, borderWidth: 0 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.raw.toFixed(1) + '%' } } } }
+        });
+    }
+
+    // 4. Programs Allocation by Subcategory
+    const allocCtx = document.getElementById('allocationChart');
+    if (allocCtx) {
+        const subs = {};
+        appState.transactions.filter(t => t.year === 2026 && t.category === 'Programs').forEach(t => {
+            const sub = t.subcategory || 'Other';
+            if (!subs[sub]) subs[sub] = 0;
+            subs[sub] += t.amount;
+        });
+        const labels = Object.keys(subs).sort();
+        const data = labels.map(l => subs[l]);
+        const colors = ['rgba(71,57,231,0.7)', 'rgba(5,150,105,0.7)', 'rgba(255,186,0,0.7)', 'rgba(220,38,38,0.7)', 'rgba(99,102,241,0.7)', 'rgba(139,92,246,0.7)'];
+        appState.charts.allocation = new Chart(allocCtx, {
+            type: 'bar',
+            data: { labels, datasets: [{ label: 'Q1 Actual', data, backgroundColor: colors.slice(0, labels.length), borderRadius: 2 }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtWhole(ctx.raw) } } }, scales: { x: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, y: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
+        });
     }
 }
 function destroyChart(name) { if (appState.charts[name]) { appState.charts[name].destroy(); appState.charts[name] = null; } }
 
 // ============================================================
-// 16. CALENDAR TAB — 3-LEVEL ZOOM
+// 16. BUDGET TAB (CALENDAR) — 3-LEVEL ZOOM
 // ============================================================
 function renderCalendar() {
-    const el = document.getElementById('tab-calendar');
+    const el = document.getElementById('tab-budget');
     let html = renderCalendarToolbar();
     switch (appState.calendarZoom) {
         case 'annual': html += renderCalendarAnnual(); break;
@@ -727,29 +838,33 @@ function renderCalendar() {
         case 'monthly': html += renderCalendarMonthly(); break;
     }
     el.innerHTML = html;
-    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function renderCalendarToolbar() {
     const z = appState.calendarZoom;
-    let bc = '<div class="calendar-breadcrumb">';
-    if (z === 'annual') bc += '<span class="calendar-breadcrumb-current">Annual Overview</span>';
-    else if (z === 'quarterly') {
-        bc += `<span class="calendar-breadcrumb-item" onclick="calZoomTo('annual')">Annual</span><span class="calendar-breadcrumb-sep">&rsaquo;</span>`;
-        bc += `<span class="calendar-breadcrumb-current">${appState.calendarQuarter} 2026</span>`;
-    } else {
-        bc += `<span class="calendar-breadcrumb-item" onclick="calZoomTo('annual')">Annual</span><span class="calendar-breadcrumb-sep">&rsaquo;</span>`;
-        bc += `<span class="calendar-breadcrumb-item" onclick="calZoomTo('quarterly','${quarterOf(appState.calendarMonth)}')">${quarterOf(appState.calendarMonth)}</span><span class="calendar-breadcrumb-sep">&rsaquo;</span>`;
-        bc += `<span class="calendar-breadcrumb-current">${appState.calendarMonth} 2026</span>`;
+    let html = '<div class="zoom-bar">';
+    html += `<button class="zoom-btn ${z === 'annual' ? 'active' : ''}" onclick="calZoomTo('annual')">Annual</button>`;
+    html += `<button class="zoom-btn ${z === 'quarterly' ? 'active' : ''}" onclick="calZoomTo('quarterly','${appState.calendarQuarter || 'Q1'}')">Quarterly</button>`;
+    html += `<button class="zoom-btn ${z === 'monthly' ? 'active' : ''}" onclick="calZoomTo('monthly','${appState.calendarMonth || 'Jan'}')">Monthly</button>`;
+    html += '<span class="zoom-sep">|</span>';
+    // Quarter dropdown
+    html += `<select class="zoom-select" onchange="calZoomTo('quarterly',this.value)">`;
+    ['Q1','Q2','Q3','Q4'].forEach(q => html += `<option value="${q}" ${appState.calendarQuarter === q ? 'selected' : ''}>${q} 2026</option>`);
+    html += '</select>';
+    // Month dropdown
+    if (z !== 'annual') {
+        const months = CONFIG.QUARTERS[appState.calendarQuarter] || CONFIG.MONTHS;
+        html += `<select class="zoom-select" onchange="calZoomTo('monthly',this.value)">`;
+        months.forEach(m => html += `<option value="${m}" ${appState.calendarMonth === m ? 'selected' : ''}>${m}</option>`);
+        html += '</select>';
     }
-    bc += '</div>';
-    let html = '<div class="calendar-toolbar">';
-    html += '<div class="flex items-center gap-8">' + bc;
-    html += `<select class="filter-select" onchange="changeCalendarGrouping(this.value)"><option value="category" ${appState.calendarGrouping === 'category' ? 'selected' : ''}>Category</option><option value="vendor" ${appState.calendarGrouping === 'vendor' ? 'selected' : ''}>Vendor</option><option value="gl" ${appState.calendarGrouping === 'gl' ? 'selected' : ''}>GL Account</option></select>`;
-    html += `<button class="btn btn-sm btn-secondary" onclick="calExpandAll()">Expand</button><button class="btn btn-sm btn-secondary" onclick="calCollapseAll()">Collapse</button>`;
-    html += '</div>';
-    html += '<div class="calendar-legend"><div class="legend-item"><div class="legend-swatch legend-actual"></div>Actual</div><div class="legend-item"><div class="legend-swatch legend-forecast"></div>Forecast</div><div class="legend-item"><div class="legend-swatch legend-outstanding"></div>Outstanding</div></div>';
-    html += '</div>';
+    // Grouping
+    html += '<div style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text-muted)">';
+    html += '<span>Group:</span>';
+    html += `<select class="zoom-select" onchange="changeCalendarGrouping(this.value)">`;
+    html += `<option value="category" ${appState.calendarGrouping === 'category' ? 'selected' : ''}>Category</option>`;
+    html += `<option value="vendor" ${appState.calendarGrouping === 'vendor' ? 'selected' : ''}>Vendor</option>`;
+    html += '</select></div></div>';
     return html;
 }
 
@@ -760,14 +875,14 @@ function renderCalendarAnnual() {
     const qs = ['Q1', 'Q2', 'Q3', 'Q4'];
     const curQ = quarterOf(getCurrentMonth());
 
-    let html = '<div class="calendar-container"><table class="calendar-table"><thead><tr><th class="row-label">Category / Line Item</th>';
-    qs.forEach(q => {
-        html += `<th class="num cal-zoom-header ${q === curQ ? 'current-month' : ''}" onclick="calZoomTo('quarterly','${q}')" colspan="2">${q} 2026</th>`;
+    let html = '<div class="calendar-container"><table class="calendar-table"><thead><tr><th class="row-label"></th>';
+    qs.forEach((q, qi) => {
+        const cls = q === curQ ? 'current-month' : '';
+        const sepCls = qi > 0 ? 'q-sep' : '';
+        html += `<th class="num cal-zoom-header bgt cell ${sepCls} ${cls}" onclick="calZoomTo('quarterly','${q}')" style="font-size:9px;font-weight:400">Budget</th>`;
+        html += `<th class="num cal-zoom-header act cell ${cls}" onclick="calZoomTo('quarterly','${q}')">${q}</th>`;
     });
-    html += '<th class="num quarter-header" colspan="2">Annual</th><th class="num">Variance</th><th class="num">% Used</th></tr>';
-    html += '<tr><th class="row-label"></th>';
-    qs.forEach(() => { html += '<th class="num" style="font-size:9px;font-weight:400">Budget</th><th class="num" style="font-size:9px;font-weight:400">Actual</th>'; });
-    html += '<th class="num" style="font-size:9px;font-weight:400">Budget</th><th class="num" style="font-size:9px;font-weight:400">Actual</th><th class="num"></th><th class="num"></th></tr></thead><tbody>';
+    html += '<th class="num ann-col q-sep cell" style="font-size:9px;font-weight:400">Budget</th><th class="num ann-col cell" style="font-size:9px;font-weight:400">Actual</th><th class="num cell">Var</th><th class="num cell">% Used</th></tr></thead><tbody>';
 
     let grandBudget = 0, grandActual = 0;
 
@@ -778,33 +893,99 @@ function renderCalendarAnnual() {
         const catActual = catTx.reduce((s, t) => s + t.amount, 0);
         const isCollapsed = appState.calendarCollapsed[cat];
 
-        // Category header
+        // Category header row
         html += `<tr class="category-row"><td class="row-label-cell"><span class="cal-category-toggle ${isCollapsed ? 'collapsed' : ''}" onclick="calToggleCategory('${esc(cat)}')">${esc(cat)}</span></td>`;
-        qs.forEach(q => {
+        qs.forEach((q, qi) => {
             const qMonths = CONFIG.QUARTERS[q];
             const qBudget = budgetRow ? qMonths.reduce((s, m) => s + (budgetRow.months[m] || 0), 0) : 0;
             const qActual = catTx.filter(t => qMonths.includes(t.month)).reduce((s, t) => s + t.amount, 0);
-            html += `<td class="num cal-budget-col">${qBudget ? fmtWhole(qBudget) : ''}</td><td class="num cal-actual-col">${qActual ? fmtWhole(qActual) : ''}</td>`;
+            const sepCls = qi > 0 ? 'q-sep' : '';
+            html += `<td class="num bgt cell ${sepCls}">${qBudget ? fmtWhole(qBudget) : ''}</td><td class="num act cell">${qActual ? fmtWhole(qActual) : ''}</td>`;
         });
         const variance = catBudget - catActual;
         const pctUsed = catBudget > 0 ? catActual / catBudget : 0;
-        html += `<td class="num cal-budget-col">${catBudget ? fmtWhole(catBudget) : ''}</td><td class="num cal-actual-col">${catActual ? fmtWhole(catActual) : ''}</td>`;
-        html += `<td class="num ${variance >= 0 ? 'cal-variance-pos' : 'cal-variance-neg'}">${fmtWhole(variance)}</td>`;
-        html += `<td class="num ${pctClass(pctUsed)}">${fmtPct(pctUsed)}</td></tr>`;
+        html += `<td class="num ann-col q-sep cell">${catBudget ? fmtWhole(catBudget) : ''}</td><td class="num ann-col cell">${catActual ? fmtWhole(catActual) : ''}</td>`;
+        html += `<td class="num cell ${variance >= 0 ? 'cal-variance-pos' : 'cal-variance-neg'}">${fmtWhole(variance)}</td>`;
+        html += `<td class="num cell ${pctClass(pctUsed)}">${fmtPct(pctUsed)}</td></tr>`;
 
-        // Line items (vendors within category)
-        if (!isCollapsed) {
+        // Subcategory grouping for Programs
+        if (!isCollapsed && cat === 'Programs' && appState.vendorBudgets.length > 0) {
+            const subs = {};
+            appState.vendorBudgets.filter(vb => vb.category === cat).forEach(vb => {
+                if (!subs[vb.subcategory]) subs[vb.subcategory] = [];
+                subs[vb.subcategory].push(vb);
+            });
+            Object.entries(subs).sort(([a], [b]) => a.localeCompare(b)).forEach(([sub, vendors]) => {
+                // Subcategory header
+                const subActuals = catTx.filter(t => vendors.some(vb => matchVendor(vb.vendor, t.vendor)));
+                html += `<tr class="subcategory-row"><td class="row-label-cell">${esc(sub)}</td>`;
+                qs.forEach((q, qi) => {
+                    const qKey = q.toLowerCase();
+                    const qBudget = vendors.reduce((s, vb) => s + (vb[qKey] || 0), 0);
+                    const qMonths = CONFIG.QUARTERS[q];
+                    const qActual = subActuals.filter(t => qMonths.includes(t.month)).reduce((s, t) => s + t.amount, 0);
+                    const sepCls = qi > 0 ? 'q-sep' : '';
+                    html += `<td class="num bgt cell ${sepCls}">${qBudget ? fmtWhole(qBudget) : ''}</td><td class="num act cell">${qActual ? fmtWhole(qActual) : ''}</td>`;
+                });
+                const subBudgetAnn = vendors.reduce((s, vb) => s + vb.q1 + vb.q2 + vb.q3 + vb.q4, 0);
+                const subActualAnn = subActuals.reduce((s, t) => s + t.amount, 0);
+                html += `<td class="num ann-col q-sep cell">${subBudgetAnn ? fmtWhole(subBudgetAnn) : ''}</td><td class="num ann-col cell">${subActualAnn ? fmtWhole(subActualAnn) : ''}</td><td class="num cell"></td><td class="num cell"></td></tr>`;
+
+                // Vendor rows under subcategory
+                vendors.forEach(vb => {
+                    const isDraft = (vb.notes || '').toLowerCase().includes('draft');
+                    const isDisabled = appState.disabledVendors[vb.vendor];
+                    const rowClass = isDraft ? 'draft-row' : (isDisabled ? 'cut-row' : '');
+                    const vtx = catTx.filter(t => matchVendor(vb.vendor, t.vendor));
+                    html += `<tr class="vendor-row ${rowClass}"><td class="row-label-cell">`;
+                    html += `<button class="toggle-btn ${isDisabled ? '' : 'on'}" onclick="toggleVendor('${esc(vb.vendor)}')">${isDisabled ? '' : '✓'}</button> `;
+                    html += `${esc(vb.vendor)}</td>`;
+                    qs.forEach((q, qi) => {
+                        const qKey = q.toLowerCase();
+                        const qBudget = vb[qKey] || 0;
+                        const qMonths = CONFIG.QUARTERS[q];
+                        const qActual = vtx.filter(t => qMonths.includes(t.month)).reduce((s, t) => s + t.amount, 0);
+                        const sepCls = qi > 0 ? 'q-sep' : '';
+                        html += `<td class="num bgt cell ${sepCls}">${qBudget ? fmtWhole(qBudget) : ''}</td>`;
+                        html += `<td class="num clickable cell" onclick="drillCalendarVendor('${esc(vb.vendor)}','${q}')" style="font-size:11px">${qActual ? fmt(qActual) : ''}</td>`;
+                    });
+                    const vBudgetAnn = vb.q1 + vb.q2 + vb.q3 + vb.q4;
+                    const vActualAnn = vtx.reduce((s, t) => s + t.amount, 0);
+                    html += `<td class="num ann-col q-sep cell">${vBudgetAnn ? fmtWhole(vBudgetAnn) : ''}</td><td class="num ann-col cell">${vActualAnn ? fmt(vActualAnn) : ''}</td><td class="num cell"></td><td class="num cell"></td></tr>`;
+                });
+            });
+            // Unmatched vendors (actual spend with no budget row)
+            const matchedVendors = appState.vendorBudgets.filter(vb => vb.category === cat).map(vb => vb.vendor);
+            const unmatchedTx = catTx.filter(t => !matchedVendors.some(mv => matchVendor(mv, t.vendor)));
+            if (unmatchedTx.length > 0) {
+                const uVendors = {};
+                unmatchedTx.forEach(t => { const v = t.vendor || 'Other'; if (!uVendors[v]) uVendors[v] = []; uVendors[v].push(t); });
+                Object.entries(uVendors).sort(([a], [b]) => a.localeCompare(b)).forEach(([vendor, vtx]) => {
+                    const vTotal = vtx.reduce((s, t) => s + t.amount, 0);
+                    html += `<tr class="vendor-row"><td class="row-label-cell">${esc(vendor)}</td>`;
+                    qs.forEach((q, qi) => {
+                        const qMonths = CONFIG.QUARTERS[q];
+                        const qActual = vtx.filter(t => qMonths.includes(t.month)).reduce((s, t) => s + t.amount, 0);
+                        const sepCls = qi > 0 ? 'q-sep' : '';
+                        html += `<td class="num bgt cell ${sepCls}"></td><td class="num clickable cell" onclick="drillCalendarVendor('${esc(vendor)}','${q}')" style="font-size:11px">${qActual ? fmt(qActual) : ''}</td>`;
+                    });
+                    html += `<td class="num ann-col q-sep cell"></td><td class="num ann-col cell" style="font-size:11px">${fmt(vTotal)}</td><td class="num cell"></td><td class="num cell"></td></tr>`;
+                });
+            }
+        } else if (!isCollapsed) {
+            // Non-Programs: simple vendor rows
             const vendors = {};
             catTx.forEach(t => { const v = t.vendor || 'Other'; if (!vendors[v]) vendors[v] = []; vendors[v].push(t); });
             Object.entries(vendors).sort(([a], [b]) => a.localeCompare(b)).forEach(([vendor, vtx]) => {
                 const vTotal = vtx.reduce((s, t) => s + t.amount, 0);
-                html += `<tr class="${isCollapsed ? 'cal-category-collapsed' : ''}"><td class="row-label-cell" style="padding-left:20px;font-weight:400;font-size:11px">${esc(vendor)}</td>`;
-                qs.forEach(q => {
+                html += `<tr class="vendor-row"><td class="row-label-cell">${esc(vendor)}</td>`;
+                qs.forEach((q, qi) => {
                     const qMonths = CONFIG.QUARTERS[q];
                     const qActual = vtx.filter(t => qMonths.includes(t.month)).reduce((s, t) => s + t.amount, 0);
-                    html += `<td class="num cal-budget-col"></td><td class="num clickable" onclick="drillCalendarVendor('${esc(vendor)}','${q}')" style="font-size:11px">${qActual ? fmt(qActual) : ''}</td>`;
+                    const sepCls = qi > 0 ? 'q-sep' : '';
+                    html += `<td class="num bgt cell ${sepCls}"></td><td class="num clickable cell" onclick="drillCalendarVendor('${esc(vendor)}','${q}')" style="font-size:11px">${qActual ? fmt(qActual) : ''}</td>`;
                 });
-                html += `<td class="num cal-budget-col"></td><td class="num" style="font-size:11px">${fmt(vTotal)}</td><td class="num"></td><td class="num"></td></tr>`;
+                html += `<td class="num ann-col q-sep cell"></td><td class="num ann-col cell" style="font-size:11px">${fmt(vTotal)}</td><td class="num cell"></td><td class="num cell"></td></tr>`;
             });
         }
         grandBudget += catBudget;
@@ -815,14 +996,15 @@ function renderCalendarAnnual() {
     const gVariance = grandBudget - grandActual;
     const gPct = grandBudget > 0 ? grandActual / grandBudget : 0;
     html += '<tr class="grand-total-row"><td class="row-label-cell">TOTAL</td>';
-    qs.forEach(q => {
+    qs.forEach((q, qi) => {
         const qMonths = CONFIG.QUARTERS[q];
         const qBudget = appState.budget.filter(b => b.category !== 'TOTAL' && b.category !== 'Outside Envelope').reduce((s, b) => s + qMonths.reduce((ss, m) => ss + (b.months[m] || 0), 0), 0);
         const qActual = tx.filter(t => t.year === 2026 && t.category !== 'Outside Envelope' && qMonths.includes(t.month)).reduce((s, t) => s + t.amount, 0);
-        html += `<td class="num">${fmtWhole(qBudget)}</td><td class="num">${fmtWhole(qActual)}</td>`;
+        const sepCls = qi > 0 ? 'q-sep' : '';
+        html += `<td class="num cell ${sepCls}">${fmtWhole(qBudget)}</td><td class="num cell">${fmtWhole(qActual)}</td>`;
     });
-    html += `<td class="num">${fmtWhole(grandBudget)}</td><td class="num">${fmtWhole(grandActual)}</td>`;
-    html += `<td class="num ${gVariance >= 0 ? 'cal-variance-pos' : 'cal-variance-neg'}">${fmtWhole(gVariance)}</td><td class="num ${pctClass(gPct)}">${fmtPct(gPct)}</td></tr>`;
+    html += `<td class="num ann-col q-sep cell">${fmtWhole(grandBudget)}</td><td class="num ann-col cell">${fmtWhole(grandActual)}</td>`;
+    html += `<td class="num cell ${gVariance >= 0 ? 'cal-variance-pos' : 'cal-variance-neg'}">${fmtWhole(gVariance)}</td><td class="num cell ${pctClass(gPct)}">${fmtPct(gPct)}</td></tr>`;
     html += '</tbody></table></div>';
     return html;
 }
@@ -835,15 +1017,13 @@ function renderCalendarQuarterly() {
     const cats = showHC ? ['Headcount', 'Programs', 'T&E', 'Outside Envelope'] : ['Programs', 'T&E', 'Outside Envelope'];
 
     let html = '<div class="calendar-container"><table class="calendar-table"><thead><tr><th class="row-label">Item</th>';
-    months.forEach(m => {
-        const isAct = isActualPeriod(m, 2026);
+    months.forEach((m, mi) => {
         const isCur = m === getCurrentMonth();
-        html += `<th class="num cal-zoom-header ${isCur ? 'current-month' : ''}" onclick="calZoomTo('monthly','${m}')" colspan="2">${m}</th>`;
+        const sepCls = mi > 0 ? 'q-sep' : '';
+        html += `<th class="num cal-zoom-header bgt cell ${sepCls} ${isCur ? 'current-month' : ''}" onclick="calZoomTo('monthly','${m}')" style="font-size:9px;font-weight:400">Budget</th>`;
+        html += `<th class="num cal-zoom-header act cell ${isCur ? 'current-month' : ''}" onclick="calZoomTo('monthly','${m}')">${m}</th>`;
     });
-    html += `<th class="num quarter-header" colspan="2">${q} Total</th></tr>`;
-    html += '<tr><th class="row-label"></th>';
-    months.forEach(() => { html += '<th class="num" style="font-size:9px;font-weight:400">Budget</th><th class="num" style="font-size:9px;font-weight:400">Actual</th>'; });
-    html += '<th class="num" style="font-size:9px;font-weight:400">Budget</th><th class="num" style="font-size:9px;font-weight:400">Actual</th></tr></thead><tbody>';
+    html += `<th class="num ann-col q-sep cell" style="font-size:9px;font-weight:400">Budget</th><th class="num ann-col cell">${q} Total</th></tr></thead><tbody>`;
 
     cats.forEach(cat => {
         const catTx = tx.filter(t => t.category === cat && months.includes(t.month));
@@ -851,30 +1031,32 @@ function renderCalendarQuarterly() {
         const isCollapsed = appState.calendarCollapsed[cat];
         html += `<tr class="category-row"><td class="row-label-cell"><span class="cal-category-toggle ${isCollapsed ? 'collapsed' : ''}" onclick="calToggleCategory('${esc(cat)}')">${esc(cat)}</span></td>`;
         let qBudgetTotal = 0, qActualTotal = 0;
-        months.forEach(m => {
+        months.forEach((m, mi) => {
             const mBudget = budgetRow ? (budgetRow.months[m] || 0) : 0;
             const mActual = catTx.filter(t => t.month === m).reduce((s, t) => s + t.amount, 0);
             const isAct = isActualPeriod(m, 2026);
             const cellCls = isAct ? '' : 'forecast-cell';
-            html += `<td class="num cal-budget-col ${cellCls}">${mBudget ? fmtWhole(mBudget) : ''}</td><td class="num cal-actual-col ${cellCls}">${mActual ? fmtWhole(mActual) : ''}</td>`;
+            const sepCls = mi > 0 ? 'q-sep' : '';
+            html += `<td class="num bgt cell ${cellCls} ${sepCls}">${mBudget ? fmtWhole(mBudget) : ''}</td><td class="num act cell ${cellCls}">${mActual ? fmtWhole(mActual) : ''}</td>`;
             qBudgetTotal += mBudget; qActualTotal += mActual;
         });
-        html += `<td class="num quarter-total-cell">${fmtWhole(qBudgetTotal)}</td><td class="num quarter-total-cell">${fmtWhole(qActualTotal)}</td></tr>`;
+        html += `<td class="num ann-col q-sep cell">${fmtWhole(qBudgetTotal)}</td><td class="num ann-col cell">${fmtWhole(qActualTotal)}</td></tr>`;
         if (!isCollapsed) {
             const vendors = {};
             catTx.forEach(t => { const v = t.vendor || 'Other'; if (!vendors[v]) vendors[v] = []; vendors[v].push(t); });
             Object.entries(vendors).sort(([a], [b]) => a.localeCompare(b)).forEach(([vendor, vtx]) => {
-                html += `<tr><td class="row-label-cell" style="padding-left:20px;font-weight:400;font-size:11px">${esc(vendor)}</td>`;
+                html += `<tr class="vendor-row"><td class="row-label-cell">${esc(vendor)}</td>`;
                 let vqTotal = 0;
-                months.forEach(m => {
+                months.forEach((m, mi) => {
                     const mActual = vtx.filter(t => t.month === m).reduce((s, t) => s + t.amount, 0);
                     const isAct = isActualPeriod(m, 2026);
                     const hasOutstanding = vtx.some(t => t.month === m && t.status === 'Outstanding');
                     const cellCls = (isAct ? '' : 'forecast-cell') + (hasOutstanding ? ' outstanding-cell' : '');
-                    html += `<td class="num cal-budget-col ${cellCls}"></td><td class="num clickable ${cellCls}" onclick="drillCalendarVendor('${esc(vendor)}','${m}')" style="font-size:11px">${mActual ? fmt(mActual) : ''}</td>`;
+                    const sepCls = mi > 0 ? 'q-sep' : '';
+                    html += `<td class="num bgt cell ${cellCls} ${sepCls}"></td><td class="num clickable cell ${cellCls}" onclick="drillCalendarVendor('${esc(vendor)}','${m}')" style="font-size:11px">${mActual ? fmt(mActual) : ''}</td>`;
                     vqTotal += mActual;
                 });
-                html += `<td class="num quarter-total-cell"></td><td class="num quarter-total-cell" style="font-size:11px">${fmt(vqTotal)}</td></tr>`;
+                html += `<td class="num ann-col q-sep cell"></td><td class="num ann-col cell" style="font-size:11px">${fmt(vqTotal)}</td></tr>`;
             });
         }
     });
@@ -928,6 +1110,7 @@ function calToggleCategory(cat) { appState.calendarCollapsed[cat] = !appState.ca
 function calExpandAll() { appState.calendarCollapsed = {}; renderCalendar(); }
 function calCollapseAll() { ['Headcount', 'Programs', 'T&E', 'Outside Envelope'].forEach(c => appState.calendarCollapsed[c] = true); renderCalendar(); }
 function changeCalendarGrouping(val) { appState.calendarGrouping = val; renderCalendar(); }
+function toggleVendor(vendor) { appState.disabledVendors[vendor] = !appState.disabledVendors[vendor]; renderCalendar(); }
 
 function calAddRow(category, month) {
     const glDefault = category === 'Programs' ? '6406' : category === 'T&E' ? '6202' : category === 'Headcount' ? '6101' : '6303';
@@ -935,7 +1118,6 @@ function calAddRow(category, month) {
     const newTx = { _row: Date.now(), date: '', vendor: '', amount: 0, gl: glDefault, glName: info.sub, department: '400-Marketing', memo: '', category: info.cat, subcategory: info.sub, month, quarter: quarterOf(month), year: 2026, status: 'Actual', isCarryover: false, employeeType: '' };
     appState.transactions.push(newTx);
     recompute(); renderCalendar();
-    // Find the new row's vendor cell and start editing
     setTimeout(() => {
         const cells = document.querySelectorAll('td.editable-cell');
         const lastVendorCell = Array.from(cells).filter(td => td.getAttribute('ondblclick')?.includes(newTx._row + ",'vendor'")).pop();
@@ -946,15 +1128,15 @@ function calAddRow(category, month) {
 function drillCalendarVendor(vendor, period) {
     const tx = getFilteredTransactions();
     const months = CONFIG.QUARTERS[period] || [period];
-    const filtered = tx.filter(t => t.vendor === vendor && t.year === 2026 && months.includes(t.month));
+    const filtered = tx.filter(t => matchVendor(vendor, t.vendor) && t.year === 2026 && months.includes(t.month));
     if (filtered.length > 0) showDrillDown(filtered, vendor + ' — ' + period);
 }
 
 // ============================================================
-// 17. TRANSACTIONS TAB — INLINE EDITING
+// 17. EXPENSES TAB
 // ============================================================
-function renderTransactions() {
-    const el = document.getElementById('tab-transactions');
+function renderExpenses() {
+    const el = document.getElementById('tab-expenses');
     const allTx = getFilteredTransactions();
     const f = appState.txFilters;
     let filtered = allTx.filter(t => {
@@ -976,8 +1158,8 @@ function renderTransactions() {
     html += `<select class="filter-select" onchange="updateTxFilter('quarter', this.value)"><option value="">All Quarters</option><option value="Q4 2025" ${f.quarter === 'Q4 2025' ? 'selected' : ''}>Q4 2025</option><option value="Q1 2026" ${f.quarter === 'Q1 2026' ? 'selected' : ''}>Q1 2026</option><option value="Q2 2026" ${f.quarter === 'Q2 2026' ? 'selected' : ''}>Q2 2026</option><option value="Q3 2026" ${f.quarter === 'Q3 2026' ? 'selected' : ''}>Q3 2026</option><option value="Q4 2026" ${f.quarter === 'Q4 2026' ? 'selected' : ''}>Q4 2026</option></select>`;
     html += `<select class="filter-select" onchange="updateTxFilter('status', this.value)"><option value="">All Status</option><option value="Actual" ${f.status === 'Actual' ? 'selected' : ''}>Actual</option><option value="Outstanding" ${f.status === 'Outstanding' ? 'selected' : ''}>Outstanding</option></select>`;
     html += `<button class="filter-clear" onclick="clearTxFilters()">Clear</button>`;
-    html += `<button class="btn btn-secondary" onclick="exportCSV()"><i data-lucide="download" style="width:13px;height:13px"></i> CSV</button>`;
-    if (!isPres) html += `<button class="btn btn-primary" data-action="add" onclick="openAddTxModal()"><i data-lucide="plus" style="width:13px;height:13px"></i> Add</button>`;
+    html += `<button class="btn btn-secondary" onclick="exportCSV()">CSV</button>`;
+    if (!isPres) html += `<button class="btn btn-primary" data-action="add" onclick="openAddTxModal()">+ Add</button>`;
     html += '</div>';
     html += '<div class="table-container"><div class="table-scroll"><table>';
     const sortIcon = col => appState.txSort.col !== col ? '<span class="sort-indicator">↕</span>' : '<span class="sort-indicator">' + (appState.txSort.dir === 'asc' ? '↑' : '↓') + '</span>';
@@ -994,7 +1176,8 @@ function renderTransactions() {
             html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'date')">${esc(t.date)}</td>`;
             html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'vendor')">${esc(t.vendor)}</td>`;
             html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${t._row},'amount')">${fmt(t.amount)}</td>`;
-            html += `<td>${categoryPill(t.category)}</td><td>${esc(t.subcategory)}</td>`;
+            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'category')">${categoryPill(t.category)}</td>`;
+            html += `<td>${esc(t.subcategory)}</td>`;
             html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'gl')">${esc(t.gl)}</td>`;
             html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'department')">${esc(t.department)}</td>`;
             html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'memo')">${esc(t.memo)}</td>`;
@@ -1006,9 +1189,9 @@ function renderTransactions() {
     html += '</tbody></table></div></div>';
     el.innerHTML = html;
 }
-function updateTxFilter(key, val) { appState.txFilters[key] = val; if (key === 'search') debounce(renderTransactions, 300)(); else renderTransactions(); }
-function clearTxFilters() { appState.txFilters = { search: '', category: '', quarter: '', status: '' }; renderTransactions(); }
-function sortTx(col) { if (appState.txSort.col === col) appState.txSort.dir = appState.txSort.dir === 'asc' ? 'desc' : 'asc'; else { appState.txSort.col = col; appState.txSort.dir = 'asc'; } renderTransactions(); }
+function updateTxFilter(key, val) { appState.txFilters[key] = val; if (key === 'search') debounce(renderExpenses, 300)(); else renderExpenses(); }
+function clearTxFilters() { appState.txFilters = { search: '', category: '', quarter: '', status: '' }; renderExpenses(); }
+function sortTx(col) { if (appState.txSort.col === col) appState.txSort.dir = appState.txSort.dir === 'asc' ? 'desc' : 'asc'; else { appState.txSort.col = col; appState.txSort.dir = 'asc'; } renderExpenses(); }
 function exportCSV() {
     const tx = getFilteredTransactions();
     const headers = ['Date', 'Vendor', 'Amount', 'GL', 'GL_Name', 'Department', 'Memo', 'Category', 'Subcategory', 'Month', 'Quarter', 'Year', 'Status'];
@@ -1048,150 +1231,106 @@ function confirmDeleteTx(row) {
 function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
 
 // ============================================================
-// 18. SCENARIO TAB
+// 18. SOFTWARE TAB — VENDOR PORTFOLIO + INTERACTIVE FORECASTING
 // ============================================================
-function renderScenario() {
-    const el = document.getElementById('tab-scenario');
-    const s = appState.scenarioInput; const c = appState.computed;
-    const catBudget = s.category === 'Programs' ? CONFIG.BUDGET.programs : CONFIG.BUDGET.te;
-    const catActual = s.category === 'Programs' ? c.ytdActual.programs : c.ytdActual.te;
-    const catOutstanding = s.category === 'Programs' ? c.programsWaterfall.outstanding : 0;
-    const catCommitted = s.category === 'Programs' ? c.programsWaterfall.committed : 0;
-    const available = catBudget - catActual - catOutstanding - catCommitted;
-    const remaining = available - (s.amount || 0);
-    const verdict = remaining >= catBudget * 0.1 ? 'ok' : remaining >= 0 ? 'tight' : 'over';
-    const verdictLabel = verdict === 'ok' ? 'Within Budget' : verdict === 'tight' ? 'Tight' : 'Over Budget';
-    let html = '<div class="scenario-layout"><div class="scenario-input-panel section-card"><div class="section-title">Scenario Input</div>';
-    html += `<div class="form-group"><label class="form-label">Amount ($)</label><input type="number" class="form-input" id="scenarioAmount" step="100" value="${s.amount || ''}" placeholder="e.g. 8000" oninput="updateScenario('amount', parseFloat(this.value) || 0)"></div>`;
-    html += `<div class="form-group"><label class="form-label">Category</label><select class="form-select" onchange="updateScenario('category', this.value)"><option value="Programs" ${s.category === 'Programs' ? 'selected' : ''}>Programs</option><option value="T&E" ${s.category === 'T&E' ? 'selected' : ''}>T&E</option></select></div>`;
-    html += `<div class="form-group"><label class="form-label">Quarter</label><select class="form-select" onchange="updateScenario('quarter', this.value)"><option value="Q2" ${s.quarter === 'Q2' ? 'selected' : ''}>Q2</option><option value="Q3" ${s.quarter === 'Q3' ? 'selected' : ''}>Q3</option><option value="Q4" ${s.quarter === 'Q4' ? 'selected' : ''}>Q4</option></select></div>`;
-    html += `<div class="form-group"><label class="form-label">Description</label><input type="text" class="form-input" id="scenarioDesc" value="${esc(s.description)}" placeholder="e.g. Sponsored webinar" oninput="updateScenario('description', this.value)"></div></div>`;
-    html += '<div><div class="section-card"><div class="section-title">Impact Analysis</div>';
-    if (s.amount > 0) {
-        html += `<div class="scenario-verdict verdict-${verdict}">${verdictLabel}</div>`;
-        html += `<table class="scenario-impact-table"><tr><td>${s.category} Budget:</td><td>${fmt(catBudget)}</td></tr><tr><td>YTD Actual:</td><td class="amount-negative">-${fmt(catActual)}</td></tr>`;
-        if (catOutstanding > 0) html += `<tr><td>Outstanding:</td><td class="amount-negative">-${fmt(catOutstanding)}</td></tr>`;
-        html += `<tr><td>Committed:</td><td class="amount-negative">-${fmt(catCommitted)}</td></tr><tr class="divider"><td>Available:</td><td>${fmt(available)}</td></tr><tr><td>This Request:</td><td class="amount-negative">-${fmt(s.amount)}</td></tr><tr class="result"><td>Remaining:</td><td class="${amountClass(remaining)}">${fmt(remaining)}</td></tr></table>`;
-        html += `<div class="kpi-subtext mt-8">${fmtPct(s.amount / catBudget)} of ${s.category} budget</div>`;
-    } else html += '<div class="empty-state"><p>Enter an amount to see impact.</p></div>';
-    html += '</div>';
-    if (s.amount > 0) {
-        const desc = s.description || '[description]';
-        const txt = `Marketing ${s.category} budget: ${fmt(catBudget)}. Through Q1, ${fmt(catActual)} spent${catOutstanding > 0 ? ' with ' + fmt(catOutstanding) + ' outstanding' : ''}. Known commitments: ${fmt(catCommitted)}. Available: ${fmt(available)}.\n\nProposed: ${fmt(s.amount)} for ${desc} in ${s.quarter}. Remaining: ${fmt(remaining)} (${fmtPct(remaining / catBudget)}).`;
-        html += `<div class="section-card"><div class="section-title">Summary (Copy)</div><div class="scenario-summary"><button class="copy-btn" onclick="copyScenarioSummary()"><i data-lucide="copy"></i> Copy</button><pre style="white-space:pre-wrap;font-family:var(--font-family);font-size:12px;margin:0" id="scenarioSummaryText">${esc(txt)}</pre></div></div>`;
-    }
-    html += '</div></div>';
-    el.innerHTML = html;
-}
-function updateScenario(key, val) { appState.scenarioInput[key] = val; renderScenario(); }
-function copyScenarioSummary() { navigator.clipboard.writeText(document.getElementById('scenarioSummaryText').textContent).then(() => showToast('Copied', 'success')); }
-
-// ============================================================
-// 19. RECONCILIATION TAB
-// ============================================================
-function renderReconciliation() {
-    const el = document.getElementById('tab-reconciliation');
-    const cfg = appState.config;
-    const brianQ1 = parseNum(cfg.brian_q1_marketing_programs); const pantheon = parseNum(cfg.pantheon_reclassification);
-    const adjusted = parseNum(cfg.brian_adjusted_q1); const brianFull = parseNum(cfg.brian_full_year_forecast);
-    const carryovers = appState.transactions.filter(t => t.isCarryover && t.year === 2025 && t.category === 'Programs');
-    const carryoverTotal = carryovers.reduce((s, t) => s + t.amount, 0);
-    let html = '<div class="section-card recon-bridge"><div class="section-title">Q1 Reconciliation Bridge</div><table class="bridge-table">';
-    html += `<tr class="bridge-start"><td>Brian's Cash-Basis Q1 Marketing Programs</td><td>${fmt(brianQ1)}</td></tr>`;
-    html += `<tr class="bridge-adjustment"><td>Pantheon reclassification (hosting → software)</td><td class="amount-negative">-${fmt(pantheon)}</td></tr>`;
-    html += `<tr class="bridge-adjustment"><td>= Adjusted Marketing Programs</td><td>${fmt(adjusted)}</td></tr>`;
-    if (carryoverTotal > 0) { html += `<tr class="bridge-adjustment"><td>Q4 2025 carryovers paid in Q1 2026</td><td class="amount-negative">-${fmt(carryoverTotal)}</td></tr>`; html += `<tr class="bridge-result"><td>Q1 2026 Marketing Programs Actual</td><td>${fmt(adjusted - carryoverTotal)}</td></tr>`; }
-    else html += `<tr class="bridge-result"><td>Q1 2026 Adjusted Marketing Programs</td><td>${fmt(adjusted)}</td></tr>`;
-    html += '</table></div>';
-    html += '<div class="section-card"><div class="section-title">Categorization Notes</div><div class="table-container"><table><thead><tr><th>Item</th><th>Brian\'s Category</th><th>Russell\'s Category</th><th class="num">Amount</th><th>Rationale</th></tr></thead><tbody>';
-    html += `<tr><td>Pantheon</td><td>${categoryPill('Programs')}</td><td>${categoryPill('Outside Envelope')}</td><td class="num">${fmt(pantheon)}</td><td>Website CMS hosting (GL 6303). Not a marketing program.</td></tr>`;
-    html += '</tbody></table></div></div>';
-    if (carryovers.length > 0) {
-        html += '<div class="section-card"><div class="section-title">Q4 2025 Carryover Reference</div><p class="text-muted mb-8" style="font-size:11px">Transactions accrued in Q4 2025 with cash payments in Q1 2026.</p><div class="table-container"><table><thead><tr><th>Vendor</th><th>Month</th><th class="num">Amount</th><th>Category</th></tr></thead><tbody>';
-        carryovers.forEach(t => { html += `<tr><td>${esc(t.vendor)}</td><td>${esc(t.month)} ${t.year}</td><td class="num">${fmt(t.amount)}</td><td>${categoryPill(t.category)}</td></tr>`; });
-        html += `<tr class="subtotal-row"><td colspan="2">Total Carryover</td><td class="num">${fmt(carryoverTotal)}</td><td></td></tr></tbody></table></div></div>`;
-    }
-    html += `<div class="section-card"><div class="section-title">Brian's Reference Numbers</div><table class="scenario-impact-table"><tr><td>Q1 Marketing Programs:</td><td>${fmt(brianQ1)}</td></tr><tr><td>Full Year Forecast:</td><td>${fmt(brianFull)}</td></tr><tr><td>Company SW Budget:</td><td>${fmt(parseNum(cfg.company_sw_budget))}</td></tr><tr><td>NetSuite Last Refresh:</td><td>${cfg.netsuite_last_refresh || 'N/A'}</td></tr></table></div>`;
-    el.innerHTML = html;
-}
-
-// ============================================================
-// 20. SAVINGS TAB — SOFTWARE PORTFOLIO MANAGER
-// ============================================================
-function renderSavings() {
-    const el = document.getElementById('tab-savings');
+function renderSoftware() {
+    const el = document.getElementById('tab-software');
     const vendors = appState.vendorContracts;
     const totalBefore = vendors.reduce((s, v) => s + v.before, 0);
     const totalAfter = vendors.reduce((s, v) => s + v.after, 0);
     const totalSavings = vendors.reduce((s, v) => s + v.savings, 0);
-    const companySW = parseNum(appState.config.company_sw_budget) || 871560;
-
-    // Compute proposed savings
-    let proposedTotal = 0;
-    vendors.forEach(v => {
-        const p = appState.swModeling.proposals[v.vendor];
-        if (p && p.newAnnual != null) proposedTotal += v.before - p.newAnnual;
-        else proposedTotal += v.savings;
-    });
-    const additionalSavings = proposedTotal - totalSavings;
 
     let html = '';
     // KPIs
-    html += '<div class="savings-kpi-grid">';
-    html += `<div class="kpi-card positive"><div class="kpi-label">Current SW Savings</div><div class="kpi-value">${fmtWhole(totalSavings)}</div><div class="kpi-trend positive">${fmtPct(totalSavings / totalBefore)} reduction</div></div>`;
-    html += `<div class="kpi-card"><div class="kpi-label">Company SW Budget</div><div class="kpi-value">${fmtWhole(companySW)}</div><div class="kpi-trend neutral">FY 2026</div></div>`;
-    if (additionalSavings > 0) {
-        html += `<div class="kpi-card gold"><div class="kpi-label">Proposed Additional</div><div class="kpi-value sw-forecast-delta">+${fmtWhole(additionalSavings)}</div><div class="kpi-trend positive">from renegotiations</div></div>`;
-    } else {
-        html += `<div class="kpi-card gold"><div class="kpi-label">Impact on Company SW</div><div class="kpi-value">${fmtPct(totalSavings / companySW)}</div><div class="kpi-trend positive">of company budget</div></div>`;
-    }
+    html += '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">';
+    html += `<div class="kpi-card positive"><div class="kpi-label">Total Annual Savings</div><div class="kpi-value">${fmtWhole(totalSavings)}</div><div class="kpi-trend positive">${fmtPct(totalSavings / totalBefore)} reduction</div></div>`;
+    html += `<div class="kpi-card"><div class="kpi-label">Previous Cost</div><div class="kpi-value">${fmtWhole(totalBefore)}</div><div class="kpi-trend neutral">${vendors.length} vendors</div></div>`;
+    html += `<div class="kpi-card"><div class="kpi-label">Current Cost</div><div class="kpi-value">${fmtWhole(totalAfter)}</div><div class="kpi-trend positive">after renegotiation</div></div>`;
     html += '</div>';
 
-    // Editable Portfolio Table
-    html += '<div class="section-card"><div class="section-title">Software Portfolio (double-click to edit)</div>';
-    html += '<div class="table-container"><div class="table-scroll"><table><thead><tr>';
-    html += '<th>Vendor</th><th>Category</th><th class="num">Previous $/yr</th><th class="num">Current $/yr</th><th class="num">Savings</th><th class="num">%</th><th>Contract End</th><th>Reneg Date</th><th class="num">New Target</th><th>Status</th>';
-    html += '</tr></thead><tbody>';
+    // Charts
+    html += '<div class="chart-grid">';
+    html += `<div class="chart-card"><div class="chart-title">Before vs After (Annual)</div><div class="chart-wrapper"><canvas id="swBeforeAfterChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Savings by Vendor</div><div class="chart-wrapper"><canvas id="swSavingsChart"></canvas></div></div>`;
+    html += '</div>';
+
+    // Vendor Portfolio Cards
+    html += '<div class="section-card"><div class="section-title">Vendor Portfolio</div><div class="sw-card-grid">';
     vendors.forEach((v, i) => {
-        const proposal = appState.swModeling.proposals[v.vendor] || {};
-        const hasProposal = proposal.renegDate || proposal.newAnnual;
-        html += '<tr>';
-        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${i},'vendor','vendors')">${esc(v.vendor)}</td>`;
-        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${i},'category','vendors')">${esc(v.category)}</td>`;
-        html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${i},'before','vendors')">${fmtWhole(v.before)}</td>`;
-        html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${i},'after','vendors')">${fmtWhole(v.after)}</td>`;
-        html += `<td class="num text-positive">${fmtWhole(v.savings)}</td>`;
-        html += `<td class="num">${esc(v.savingsPct)}</td>`;
-        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${i},'contractEnd','vendors')">${esc(v.contractEnd || '')}</td>`;
-        html += `<td class="editable-cell sw-modeling-cell ${hasProposal ? 'has-value' : ''}" ondblclick="startSWModelEdit(this,${i},'renegDate')">${esc(v.renegDate || proposal.renegDate || '')}</td>`;
-        html += `<td class="num editable-cell sw-modeling-cell ${hasProposal ? 'has-value' : ''}" ondblclick="startSWModelEdit(this,${i},'newTargetAnnual')">${proposal.newAnnual != null ? fmtWhole(proposal.newAnnual) : (v.newTargetAnnual != null ? fmtWhole(v.newTargetAnnual) : '')}</td>`;
-        html += `<td>${statusBadge(v.status)}</td>`;
-        html += '</tr>';
+        const statusCls = v.status === 'Renewed' ? 'sw-renewed' : v.status === 'Eliminated' || v.status === 'Ending' ? 'sw-terminated' : 'sw-upcoming';
+        const forecast = appState.swForecasts[v.vendor] || {};
+        html += '<div class="sw-card">';
+        html += '<div>';
+        html += `<div style="font-weight:600;font-size:12px;margin-bottom:2px">${esc(v.vendor)}</div>`;
+        html += `<div style="font-size:10px;color:var(--text-muted)">${esc(v.category)}</div>`;
+        html += `<div style="margin-top:4px;font-size:11px">Was: <span class="text-muted">${fmtWhole(v.before)}</span> &rarr; Now: <strong>${fmtWhole(v.after)}</strong></div>`;
+        html += `<div style="font-size:11px;color:var(--color-positive)">Saved: ${fmtWhole(v.savings)}</div>`;
+        if (v.contractEnd) html += `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">Ends: ${esc(v.contractEnd)}</div>`;
+        html += '</div>';
+        html += `<div><span class="sw-status ${statusCls}">${esc(v.status)}</span></div>`;
+        html += '</div>';
     });
-    html += `<tr class="grand-total-row"><td>Total</td><td></td><td class="num">${fmtWhole(totalBefore)}</td><td class="num">${fmtWhole(totalAfter)}</td><td class="num text-positive">${fmtWhole(totalSavings)}</td><td class="num">${fmtPct(totalSavings / totalBefore)}</td><td colspan="4"></td></tr>`;
-    html += '</tbody></table></div></div></div>';
+    html += '</div></div>';
 
-    // Forecast Impact Chart
-    html += `<div class="chart-card"><div class="chart-title">Software Cost Forecast — Monthly Impact</div><div class="chart-wrapper tall"><canvas id="swForecastChart"></canvas></div></div>`;
-
-    // Company Impact
-    html += '<div class="section-card"><div class="section-title">Company Impact</div>';
-    html += `<p style="font-size:12px;margin-bottom:8px">Marketing vendor renegotiations account for ${fmtWhole(totalSavings)} of the company's ${fmtWhole(companySW)} annual software expenses (${fmtPct(totalSavings / companySW)}).`;
-    if (additionalSavings > 0) html += ` Proposed renegotiations would add ${fmtWhole(additionalSavings)} in additional savings.`;
-    html += '</p>';
-    html += '<div class="impact-bar-container"><div class="impact-bar-track">';
-    html += `<div class="impact-bar-fill" style="width:${Math.max((totalSavings / companySW) * 100, 5)}%">${fmtPct(totalSavings / companySW)}</div>`;
-    html += `</div><div class="impact-labels"><span>Savings: ${fmtWhole(totalSavings)}</span><span>Company SW: ${fmtWhole(companySW)}</span></div></div></div>`;
+    // Forecast Chart
+    html += `<div class="chart-card"><div class="chart-title">Software Cost Forecast — Monthly</div><div class="chart-wrapper tall"><canvas id="swForecastChart"></canvas></div></div>`;
 
     el.innerHTML = html;
-    renderSWForecastChart();
+    renderSWCharts();
 }
 
-function startSWModelEdit(td, vendorIdx, field) {
-    const vendor = appState.vendorContracts[vendorIdx];
-    if (!vendor) return;
-    if (!appState.swModeling.proposals[vendor.vendor]) appState.swModeling.proposals[vendor.vendor] = {};
-    startCellEdit(td, vendorIdx, field, 'vendors');
+function renderSWCharts() {
+    destroyChart('swBeforeAfter'); destroyChart('swSavings'); destroyChart('swForecast');
+    const vendors = appState.vendorContracts;
+    const textColor = '#0A1849';
+    const gridColor = 'rgba(0,0,0,0.06)';
+    const fontOpts = { family: "'Inter', sans-serif", size: 10 };
+
+    // Before vs After
+    const baCt = document.getElementById('swBeforeAfterChart');
+    if (baCt) {
+        const labels = vendors.map(v => v.vendor);
+        appState.charts.swBeforeAfter = new Chart(baCt, {
+            type: 'bar',
+            data: { labels, datasets: [
+                { label: 'Before', data: vendors.map(v => v.before), backgroundColor: 'rgba(220,38,38,0.6)', borderRadius: 2 },
+                { label: 'After', data: vendors.map(v => v.after), backgroundColor: 'rgba(5,150,105,0.6)', borderRadius: 2 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { ticks: { font: { ...fontOpts, size: 8 }, color: textColor, maxRotation: 45 }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+        });
+    }
+
+    // Savings horizontal bars
+    const sCt = document.getElementById('swSavingsChart');
+    if (sCt) {
+        const sorted = [...vendors].sort((a, b) => b.savings - a.savings);
+        appState.charts.swSavings = new Chart(sCt, {
+            type: 'bar',
+            data: { labels: sorted.map(v => v.vendor), datasets: [{ label: 'Savings', data: sorted.map(v => v.savings), backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 }] },
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtWhole(ctx.raw) } } }, scales: { x: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, y: { ticks: { font: { ...fontOpts, size: 9 }, color: textColor }, grid: { display: false } } } }
+        });
+    }
+
+    // Forecast line chart
+    const { currentLine, proposedLine, baseline } = computeSWForecast();
+    const hasForecasts = Object.keys(appState.swForecasts).some(k => {
+        const f = appState.swForecasts[k];
+        return f.cancelled || f.targetAmount != null;
+    });
+    const fCt = document.getElementById('swForecastChart');
+    if (fCt) {
+        const datasets = [
+            { label: 'Company SW Budget (monthly)', data: new Array(12).fill(baseline), borderColor: 'rgba(107,114,128,0.4)', borderDash: [8, 4], pointRadius: 0, fill: false, tension: 0 },
+            { label: 'Marketing SW (Current)', data: currentLine, borderColor: 'rgba(71,57,231,0.9)', backgroundColor: 'rgba(71,57,231,0.08)', pointRadius: 3, fill: true, tension: 0.3 },
+        ];
+        if (hasForecasts) {
+            datasets.push({ label: 'Marketing SW (Modeled)', data: proposedLine, borderColor: 'rgba(5,150,105,0.9)', backgroundColor: 'rgba(5,150,105,0.08)', pointRadius: 3, fill: true, tension: 0.3 });
+        }
+        appState.charts.swForecast = new Chart(fCt, {
+            type: 'line', data: { labels: CONFIG.MONTHS, datasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
+        });
+    }
 }
 
 function computeSWForecast() {
@@ -1210,11 +1349,17 @@ function computeSWForecast() {
             }
             if (active) currentLine[i] += v.after / 12;
 
-            const proposal = appState.swModeling.proposals[v.vendor];
-            if (proposal && proposal.renegDate && proposal.newAnnual != null) {
-                const renegDate = new Date(proposal.renegDate);
-                if (monthDate >= renegDate) proposedLine[i] += proposal.newAnnual / 12;
-                else if (active) proposedLine[i] += v.after / 12;
+            const forecast = appState.swForecasts[v.vendor];
+            if (forecast) {
+                if (forecast.cancelled) {
+                    // Cancelled vendor — don't add to proposed
+                } else if (forecast.targetAmount != null && forecast.renewalDate) {
+                    const renewDate = new Date(forecast.renewalDate);
+                    if (monthDate >= renewDate) proposedLine[i] += forecast.targetAmount / 12;
+                    else if (active) proposedLine[i] += v.after / 12;
+                } else {
+                    if (active) proposedLine[i] += v.after / 12;
+                }
             } else {
                 if (active) proposedLine[i] += v.after / 12;
             }
@@ -1223,47 +1368,8 @@ function computeSWForecast() {
     return { currentLine, proposedLine, baseline };
 }
 
-function renderSWForecastChart() {
-    destroyChart('swForecast');
-    const { currentLine, proposedLine, baseline } = computeSWForecast();
-    const hasProposals = Object.keys(appState.swModeling.proposals).some(k => {
-        const p = appState.swModeling.proposals[k];
-        return p.renegDate && p.newAnnual != null;
-    });
-    const isDark = appState.theme === 'dark' || appState.theme === 'high-contrast';
-    const textColor = isDark ? '#e7e9ea' : '#0A1849';
-    const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
-    const fontOpts = { family: "'Inter', sans-serif", size: 10 };
-    const ctx = document.getElementById('swForecastChart');
-    if (!ctx) return;
-
-    const datasets = [
-        { label: 'Company SW Budget (monthly)', data: new Array(12).fill(baseline), borderColor: 'rgba(107,114,128,0.4)', borderDash: [8, 4], pointRadius: 0, fill: false, tension: 0 },
-        { label: 'Marketing SW (Current)', data: currentLine, borderColor: 'rgba(71,57,231,0.9)', backgroundColor: 'rgba(71,57,231,0.08)', pointRadius: 3, fill: true, tension: 0.3 },
-    ];
-    if (hasProposals) {
-        datasets.push({ label: 'Marketing SW (Proposed)', data: proposedLine, borderColor: 'rgba(5,150,105,0.9)', backgroundColor: 'rgba(5,150,105,0.08)', pointRadius: 3, fill: true, tension: 0.3 });
-    }
-
-    appState.charts.swForecast = new Chart(ctx, {
-        type: 'line',
-        data: { labels: CONFIG.MONTHS, datasets },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } },
-                tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } }
-            },
-            scales: {
-                y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } },
-                x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } }
-            }
-        }
-    });
-}
-
 // ============================================================
-// 21. EVENT HANDLERS & INITIALIZATION
+// 19. EVENT HANDLERS & INITIALIZATION
 // ============================================================
 function bindEvents() {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
@@ -1299,7 +1405,6 @@ function init() {
     bindEvents(); initAuth(); loadFallbackData();
     const loader = document.getElementById('loadingOverlay');
     setTimeout(() => loader.classList.add('hidden'), 300);
-    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

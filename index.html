@@ -8,7 +8,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -36,15 +35,9 @@
                 <option value="cfo">CFO View</option>
                 <option value="team">Team View</option>
             </select>
-            <button class="icon-btn" id="themeToggle" title="Toggle theme">
-                <i data-lucide="sun"></i>
-            </button>
-            <button class="icon-btn" id="presentationToggle" title="Presentation mode">
-                <i data-lucide="monitor"></i>
-            </button>
-            <button class="icon-btn" id="refreshBtn" title="Refresh data">
-                <i data-lucide="refresh-cw"></i>
-            </button>
+            <button class="icon-btn" id="themeToggle" title="Toggle theme">☀</button>
+            <button class="icon-btn" id="presentationToggle" title="Presentation mode">▢</button>
+            <button class="icon-btn" id="refreshBtn" title="Refresh data">↻</button>
             <div class="auth-container" id="authContainer">
                 <button class="btn btn-primary btn-sm" id="signInBtn">Sign In</button>
                 <div class="user-info" id="userInfo" style="display:none">
@@ -57,40 +50,21 @@
 
     <!-- Tab Navigation -->
     <nav class="tab-nav" id="tabNav">
-        <button class="tab-btn active" data-tab="dashboard">
-            <i data-lucide="layout-dashboard" class="tab-icon"></i>
-            Dashboard
-        </button>
-        <button class="tab-btn" data-tab="calendar">
-            <i data-lucide="calendar" class="tab-icon"></i>
-            Calendar
-        </button>
-        <button class="tab-btn" data-tab="transactions">
-            <i data-lucide="list" class="tab-icon"></i>
-            Transactions
-        </button>
-        <button class="tab-btn" data-tab="scenario">
-            <i data-lucide="calculator" class="tab-icon"></i>
-            Scenario
-        </button>
-        <button class="tab-btn" data-tab="reconciliation">
-            <i data-lucide="git-compare" class="tab-icon"></i>
-            Reconciliation
-        </button>
-        <button class="tab-btn" data-tab="savings">
-            <i data-lucide="trending-down" class="tab-icon"></i>
-            Savings
-        </button>
+        <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+        <div class="tab-divider"></div>
+        <button class="tab-btn" data-tab="budget">Budget</button>
+        <div class="tab-divider"></div>
+        <button class="tab-btn" data-tab="expenses">Expenses</button>
+        <div class="tab-divider"></div>
+        <button class="tab-btn" data-tab="software">Software</button>
     </nav>
 
     <!-- Main Content -->
     <main class="main-content" id="mainContent">
         <div class="tab-content active" id="tab-dashboard"></div>
-        <div class="tab-content" id="tab-calendar"></div>
-        <div class="tab-content" id="tab-transactions"></div>
-        <div class="tab-content" id="tab-scenario"></div>
-        <div class="tab-content" id="tab-reconciliation"></div>
-        <div class="tab-content" id="tab-savings"></div>
+        <div class="tab-content" id="tab-budget"></div>
+        <div class="tab-content" id="tab-expenses"></div>
+        <div class="tab-content" id="tab-software"></div>
     </main>
 
     <!-- Modal Overlay -->
