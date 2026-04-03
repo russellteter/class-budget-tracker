@@ -496,9 +496,15 @@ tr.editing-row { background: rgba(71,57,231,0.03) !important; }
     position: sticky; top: 0; left: 0; z-index: 12;
 }
 .calendar-table { font-size: 12px; white-space: nowrap; }
-.calendar-table th { position: sticky; top: 2px; z-index: 11; min-width: 75px; }
+.calendar-table th { position: sticky; top: 2px; z-index: 11; min-width: 62px; }
 .calendar-table th.quarter-header { background: linear-gradient(180deg, rgba(10,24,73,0.06) 0%, rgba(10,24,73,0.02) 100%); font-weight: 700; }
 .calendar-table th.current-month { border-bottom: 2px solid var(--primary); }
+/* Sticky first 2 columns: toggle (col 1) + vendor name (col 2) */
+.calendar-table th.sticky-col-toggle,
+.calendar-table td.sticky-col-toggle { position: sticky; left: 0; z-index: 13; background: var(--card-bg); min-width: 28px; max-width: 28px; }
+.calendar-table th.sticky-col-name { position: sticky; left: 28px; z-index: 13; background: linear-gradient(180deg, #f0eeff 0%, #f7f6ff 100%); min-width: 160px; text-align: left; border-right: 1px solid var(--border-color); }
+.calendar-table td.sticky-col-name { position: sticky; left: 28px; z-index: 6; background: var(--card-bg); min-width: 160px; font-weight: 500; border-right: 1px solid var(--border-color); font-size: 11px; }
+/* Legacy row-label for backward compat */
 .calendar-table th.row-label { position: sticky; left: 0; z-index: 12; background: linear-gradient(180deg, #f0eeff 0%, #f7f6ff 100%); min-width: 160px; text-align: left; }
 .calendar-table td.row-label-cell { position: sticky; left: 0; z-index: 5; background: var(--card-bg); font-weight: 500; min-width: 160px; border-right: 1px solid var(--border-color); font-size: 11px; }
 .calendar-table td.actual-cell { background: var(--card-bg); }
@@ -506,13 +512,21 @@ tr.editing-row { background: rgba(71,57,231,0.03) !important; }
 .calendar-table td.outstanding-cell { border-left: 3px solid var(--accent); }
 .calendar-table td.quarter-total-cell { background: rgba(10,24,73,0.03); font-weight: 600; }
 .calendar-table td.annual-total-cell { background: rgba(71,57,231,0.04); font-weight: 700; }
+.calendar-table .category-row td.sticky-col-toggle,
+.calendar-table .category-row td.sticky-col-name,
 .calendar-table .category-row td.row-label-cell { background: rgba(71,57,231,0.08); }
+.calendar-table .subcategory-row td.sticky-col-toggle,
+.calendar-table .subcategory-row td.sticky-col-name { background: rgba(71,57,231,0.035); }
+.calendar-table .grand-total-row td.sticky-col-toggle,
+.calendar-table .grand-total-row td.sticky-col-name { background: rgba(71,57,231,0.06); }
 .calendar-table td.num, .calendar-table th.num { text-align: center; }
 .calendar-table td.cell, .calendar-table th.cell { border-left: 1px solid rgba(0,0,0,0.06); }
 .calendar-table .q-sep { border-left: 2px solid var(--border-color) !important; }
 .calendar-table .bgt { color: var(--text-muted); font-weight: 400; background: rgba(0,0,0,0.015); }
 .calendar-table .act { color: var(--text-color); font-weight: 600; }
 .calendar-table .ann-col { background: rgba(10,24,73,0.03); font-weight: 600; }
+/* Q4'25 reference columns */
+.calendar-table .q4-ref { background: rgba(0,0,0,0.02); }
 
 /* Clickable quarter/month headers for zoom */
 .cal-zoom-header { cursor: pointer; }
@@ -664,6 +678,13 @@ tr.editing-row { background: rgba(71,57,231,0.03) !important; }
 .sw-renewed { background: rgba(5,150,105,0.1); color: var(--color-positive); }
 .sw-terminated { background: rgba(220,38,38,0.1); color: var(--color-negative); }
 .sw-upcoming { background: rgba(217,119,6,0.1); color: var(--color-warning); }
+.sw-winding { background: rgba(107,114,128,0.1); color: #6b7280; }
+
+/* Structured assumptions notes (mockup format) */
+.assumptions-notes { padding-top: 8px; }
+.assumption-note { font-size: 11px; color: var(--text-muted); padding: 4px 0; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; gap: 8px; }
+.assumption-note .assumption-label { font-weight: 500; color: var(--text-color); min-width: 160px; flex-shrink: 0; }
+.assumption-note .assumption-detail { flex: 1; }
 
 /* Assumptions panel */
 .assumptions-panel summary { font-size: 11px; font-weight: 600; color: var(--primary); cursor: pointer; text-transform: uppercase; letter-spacing: 0.04em; }
