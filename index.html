@@ -1,1 +1,128 @@
-FILE_CONTENT_PLACEHOLDER_INDEX
+<!DOCTYPE html>
+<html lang="en" data-theme="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Class 2026 Marketing Budget</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Loading budget data...</p>
+    </div>
+
+    <!-- Header -->
+    <header class="app-header" id="appHeader">
+        <div class="header-left">
+            <h1 class="header-title">Class 2026 Marketing Budget</h1>
+            <span class="header-badge">FY 2026</span>
+            <span class="presentation-badge" id="presentationBadge">Presentation</span>
+        </div>
+        <div class="header-right">
+            <div class="data-freshness" id="dataFreshness" title="Data freshness">
+                <span class="freshness-dot" id="freshnessDot"></span>
+                <span class="freshness-text" id="freshnessText">Not synced</span>
+            </div>
+            <select class="filter-select audience-select" id="audienceFilter" title="Audience view">
+                <option value="full">Full View</option>
+                <option value="cfo">CFO View</option>
+                <option value="team">Team View</option>
+            </select>
+            <button class="icon-btn" id="themeToggle" title="Toggle theme">
+                <i data-lucide="sun"></i>
+            </button>
+            <button class="icon-btn" id="presentationToggle" title="Presentation mode">
+                <i data-lucide="monitor"></i>
+            </button>
+            <button class="icon-btn" id="refreshBtn" title="Refresh data">
+                <i data-lucide="refresh-cw"></i>
+            </button>
+            <div class="auth-container" id="authContainer">
+                <button class="btn btn-primary btn-sm" id="signInBtn">Sign In</button>
+                <div class="user-info" id="userInfo" style="display:none">
+                    <span class="user-email" id="userEmail"></span>
+                    <button class="btn btn-outline btn-sm" id="signOutBtn">Sign Out</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav" id="tabNav">
+        <button class="tab-btn active" data-tab="dashboard">
+            <i data-lucide="layout-dashboard" class="tab-icon"></i>
+            Dashboard
+        </button>
+        <button class="tab-btn" data-tab="calendar">
+            <i data-lucide="calendar" class="tab-icon"></i>
+            Calendar
+        </button>
+        <button class="tab-btn" data-tab="transactions">
+            <i data-lucide="list" class="tab-icon"></i>
+            Transactions
+        </button>
+        <button class="tab-btn" data-tab="scenario">
+            <i data-lucide="calculator" class="tab-icon"></i>
+            Scenario
+        </button>
+        <button class="tab-btn" data-tab="reconciliation">
+            <i data-lucide="git-compare" class="tab-icon"></i>
+            Reconciliation
+        </button>
+        <button class="tab-btn" data-tab="savings">
+            <i data-lucide="trending-down" class="tab-icon"></i>
+            Savings
+        </button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content" id="mainContent">
+        <div class="tab-content active" id="tab-dashboard"></div>
+        <div class="tab-content" id="tab-calendar"></div>
+        <div class="tab-content" id="tab-transactions"></div>
+        <div class="tab-content" id="tab-scenario"></div>
+        <div class="tab-content" id="tab-reconciliation"></div>
+        <div class="tab-content" id="tab-savings"></div>
+    </main>
+
+    <!-- Modal Overlay -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modalTitle"></h2>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+            <div class="modal-footer" id="modalFooter"></div>
+        </div>
+    </div>
+
+    <!-- Drill-Down Panel (slide-out right) -->
+    <div class="drilldown-overlay" id="drilldownOverlay">
+        <div class="drilldown-panel" id="drilldownPanel">
+            <div class="drilldown-header">
+                <h3 class="drilldown-title" id="drilldownTitle"></h3>
+                <button class="drilldown-close" id="drilldownClose">&times;</button>
+            </div>
+            <div class="drilldown-body" id="drilldownBody"></div>
+            <div class="drilldown-footer" id="drilldownFooter">
+                <span class="drilldown-count" id="drilldownCount"></span>
+                <span class="drilldown-total" id="drilldownTotal"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

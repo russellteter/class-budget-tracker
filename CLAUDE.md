@@ -9,51 +9,36 @@ Read both before writing any code.
 
 ## Project Overview
 
-Interactive web application for tracking, reconciling, and managing the 2026 Class Technologies marketing budget ($446,914 envelope). Single-file HTML/JS/CSS app backed by Google Sheets for persistence. Designed to be hosted on GitHub Pages.
+Interactive web application for tracking, reconciling, and managing the 2026 Class Technologies marketing budget ($446,914 envelope). Multi-file HTML/CSS/JS app backed by Google Sheets for persistence. Hosted on GitHub Pages.
 
 ## Current State
 
-- `index.html` — The working app (v2). Functional but needs UI/UX redesign. Too much whitespace, too "AI vibe-coded". Needs to look more like a spreadsheet/Excel — compact, data-dense, professional.
-- `v1-reference.html` — The v1 dashboard Russell liked. Use this as the design reference. Copy its CSS design system, spacing, font sizes, table density. The v1 has 12px body font, 8px table cell padding, compact KPI cards, tight header. This is the target aesthetic.
-- `docs/` — Architecture, data model, design system, Sheets API setup, product vision, and full session context.
+- `index.html` — HTML shell with CDN links, semantic structure for all 6 tabs, modal, drill-down panel, toast container
+- `styles.css` — Complete design system: CSS variables, 3 themes (light/dark/high-contrast), glassmorphic chrome, data-dense tables, KPI cards, charts, modals, presentation mode, print stylesheet
+- `app.js` — Full application logic: Google OAuth, Sheets API (batchGet/write/append), computation engine, audience filtering (full/cfo/team), 6 tab renderers, Chart.js charts, drill-down panel, scenario planner, CSV export
+- `v1-reference.html` — Archived v1 dashboard for design reference
+- `docs/` — Architecture, data model, design system, Sheets API setup, product vision, and full session context
 
-## Priority 1: UI/UX Redesign
+## Implemented Features
 
-The current `index.html` needs to be redesigned to match the v1 reference aesthetic:
+- **6 tabs**: Dashboard, Calendar, Transactions, Scenario, Reconciliation, Savings
+- **Google Sheets API**: OAuth sign-in, batchGet for reads, PUT/POST for writes, fallback data for demo
+- **3 themes**: Light (default), Dark, High Contrast via `data-theme` attribute
+- **Audience filtering**: Full/CFO/Team with DOM-level data exclusion
+- **Charts**: Programs waterfall, category doughnut, monthly trend, vendor cost comparison (Chart.js v4)
+- **Presentation mode**: larger fonts, no edit controls, Escape to exit
+- **Drill-down**: click any aggregated number to see constituent transactions
+- **Calendar**: 15-month grid (Q4 2025 + 2026), groupable by category/vendor/GL
+- **Scenario planner**: "Can I spend $X?" with impact table and copyable summary
+- **Reconciliation**: bridge walkdown from Brian's $85,309 to adjusted actuals
+- **Savings**: vendor-by-vendor comparison with company impact visualization
 
-### What to copy from v1-reference.html:
-- **Font size**: body 14px, table cells 12px, headers 10px uppercase
-- **Spacing**: padding 8px 12px on table cells, 12px gaps, 16px container padding
-- **Header**: compact (12px 20px padding), 18px title, sticky
-- **Tab nav**: compact (12px 20px padding), 13px font, bottom border style
-- **KPI cards**: 200px min grid, 16px padding, 28px value, 11px label, 3px gradient top bar
-- **Tables**: sticky gradient thead, 10px uppercase headers, alternating very subtle row hover, category rows with navy bg, pill badges for categories
-- **Charts**: 280px height wrapper, 12px uppercase card titles
-- **CSS variables**: Use the exact v1 variable names and values (see docs/design-system.md)
-- **Dark mode**: data-theme attribute approach, not class toggle
+## Next Steps
 
-### What NOT to do:
-- No 1.75rem headers or rem-based sizing (use px)
-- No generous padding/margins
-- No large rounded corners (max 9px)
-- No "card with lots of whitespace" aesthetic
-- No emoji-heavy UI
-
-## Priority 2: Google Sheets API Integration
-
-The app needs real two-way Google Sheets sync. See `docs/sheets-setup.md` for details.
-
-- Spreadsheet ID: `1ZQtYfDHBiLPEFBUV4OR-3_q81oHKbg6MrWyNP-RCJnY`
-- 5 sheets: Transactions (175 rows), Budget, Commitments, Vendor Contracts, Config
-- Read: Google Sheets API v4 with API key (public read)
-- Write: OAuth 2.0 with Sheets scope
-- Fallback: embedded data constant if API unavailable
-
-## Priority 3: GitHub Pages Deployment
-
-- Deploy `index.html` as root
-- Set up GitHub Pages from main branch
-- CNAME optional (no custom domain yet)
+- Configure GitHub Pages deployment (enable in repo settings)
+- Add authorized origin `https://russellteter.github.io` in Google Cloud Console
+- Build NetSuite sync runbook for automated data refresh
+- Full QA: edge cases, error states, keyboard navigation
 
 ## Business Context
 
@@ -93,8 +78,10 @@ Russell Teter is VP Marketing at Class Technologies. This tool helps him:
 ## File Structure
 ```
 class-budget-tracker/
-├── index.html              # Main app (needs redesign)
-├── v1-reference.html       # Design reference (keep for comparison)
+├── index.html              # HTML shell + CDN links
+├── styles.css              # Full design system (light/dark/high-contrast)
+├── app.js                  # Application logic (~2100 lines)
+├── v1-reference.html       # Archived v1 design reference
 ├── CLAUDE.md               # This file
 ├── README.md               # Project readme
 └── docs/
@@ -112,10 +99,11 @@ class-budget-tracker/
 - Deploy: push to main, GitHub Pages serves index.html
 
 ## Important Constraints
-- No localStorage or sessionStorage (not supported in some hosting contexts)
-- All state in memory (JS objects)
-- Single file — no separate CSS/JS files
+- No localStorage or sessionStorage — all state in memory (JS objects)
+- Multi-file architecture: `index.html` + `styles.css` + `app.js` (no build tools, no npm)
 - Amounts display as `$XX,XXX.XX`, negatives in red
 - Kate Bertram: contractor, no fully-loaded cost multiplier
 - "Outside Envelope" items (SW subs, prepaid) tracked but NOT counted against budget
 - Q4 2025 data is included for carryover context but isn't part of 2026 budget tracking
+- Team View: headcount data excluded from DOM entirely, not hidden by CSS
+- OAuth required for write access; fallback data used for demo/read-only mode
