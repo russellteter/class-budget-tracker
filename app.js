@@ -205,16 +205,41 @@ async function fetchAllSheets() {
     appState.isSyncing = true; updateFreshness();
     const refreshBtn = document.getElementById('refreshBtn'); refreshBtn.classList.add('spinning');
     try {
-        const ranges = CONFIG.SHEET_RANGES.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
-        const resp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values:batchGet?${ranges}`, { headers: { Authorization: 'Bearer ' + appState.accessToken } });
-        if (!resp.ok) throw new Error('Sheets API error: ' + resp.status);
+        // Discover which sheets exist, then only request those
+        const metaResp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title`, { headers: { Authorization: 'Bearer ' + appState.accessToken } });
+        if (!metaResp.ok) throw new Error('Sheets metadata error: ' + metaResp.status);
+        const meta = await metaResp.json();
+        const existingTabs = (meta.sheets || []).map(s => s.properties.title);
+        console.log('Sheets found:', existingTabs);
+        // Filter ranges to only existing tabs
+        const validRanges = CONFIG.SHEET_RANGES.filter(r => {
+            const tabName = r.split('!')[0];
+            return existingTabs.includes(tabName);
+        });
+        if (validRanges.length === 0) throw new Error('No matching tabs found in spreadsheet');
+        const rangesParam = validRanges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+        const resp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values:batchGet?${rangesParam}`, { headers: { Authorization: 'Bearer ' + appState.accessToken } });
+        if (!resp.ok) { const body = await resp.text(); throw new Error('Sheets API error: ' + resp.status + ' ' + body); }
         const data = await resp.json(); const rd = data.valueRanges || [];
-        parseTransactions(rd[0]?.values || []); parseBudget(rd[1]?.values || []);
-        parseCommitments(rd[2]?.values || []); parseVendorContracts(rd[3]?.values || []);
-        parseConfig(rd[4]?.values || []); parseVendorBudgets(rd[5]?.values || []);
+        // Map results back to parsers by tab name
+        const parsers = {
+            'Transactions': parseTransactions, 'Budget': parseBudget,
+            'Commitments': parseCommitments, 'Vendor Contracts': parseVendorContracts,
+            'Config': parseConfig, 'Vendor Budgets': parseVendorBudgets
+        };
+        // Start with fallback data as baseline, then overlay Sheets data
+        loadFallbackData();
+        rd.forEach(vr => {
+            const tabName = (vr.range || '').split('!')[0].replace(/'/g, '');
+            const parser = parsers[tabName];
+            if (parser && vr.values) parser(vr.values);
+        });
+        const loaded = rd.map(vr => (vr.range || '').split('!')[0].replace(/'/g, ''));
+        const skipped = CONFIG.SHEET_RANGES.map(r => r.split('!')[0]).filter(t => !existingTabs.includes(t));
         appState.lastSynced = new Date(); recompute(); renderActiveTab();
-        showToast('Data loaded from Google Sheets', 'success');
-    } catch (err) { console.error(err); showToast('Failed to load from Sheets. Using fallback.', 'warning'); loadFallbackData(); }
+        if (skipped.length > 0) showToast('Loaded ' + loaded.length + ' tabs. Missing: ' + skipped.join(', '), 'info', 5000);
+        else showToast('Data loaded from Google Sheets', 'success');
+    } catch (err) { console.error(err); showToast('Sheets error: ' + err.message.substring(0, 80) + '. Using fallback.', 'warning'); loadFallbackData(); }
     finally { appState.isSyncing = false; refreshBtn.classList.remove('spinning'); updateFreshness(); }
 }
 async function writeToSheets(range, values) {
