@@ -452,17 +452,17 @@ function loadFallbackData() {
         { vendor: 'Wrike', before: 8460, after: 0, savings: 8460, savingsPct: '100%', category: 'PM Tool', status: 'Cancelled', notes: 'Eliminated, migrated off', in446k: false, contractEnd: '2025-12-31', renegDate: null, newTargetAnnual: null },
         { vendor: 'Bynder', before: 16304, after: 0, savings: 16304, savingsPct: '100%', category: 'DAM', status: 'Cancelled', notes: 'No longer needed', in446k: false, contractEnd: '2025-12-31', renegDate: null, newTargetAnnual: null },
     ];
-    appState.vendorBudgets = [
-        { vendor: 'Paperclip Promotions', subcategory: 'Events', category: 'Programs', q1: 900, q2: 900, q3: 900, q4: 900, notes: 'Event materials ~$300/mo' },
-        { vendor: 'Docebo Annual Conference', subcategory: 'Events', category: 'Programs', q1: 0, q2: 0, q3: 12000, q4: 0, notes: 'Draft - annual conference' },
-        { vendor: 'Sponge Software', subcategory: 'Mktg Ops', category: 'Programs', q1: 15400, q2: 0, q3: 0, q4: 0, notes: 'Terminated after Q1' },
-        { vendor: 'LinkedIn Ads', subcategory: 'Advertising', category: 'Programs', q1: 2850, q2: 2850, q3: 2850, q4: 2850, notes: 'Monthly ~$950/mo' },
-        { vendor: 'Google Ads', subcategory: 'Advertising', category: 'Programs', q1: 2550, q2: 2550, q3: 2550, q4: 2550, notes: 'Monthly ~$850/mo' },
-        { vendor: 'Sponsored Webinar Series', subcategory: 'Webinars', category: 'Programs', q1: 0, q2: 8000, q3: 0, q4: 0, notes: 'Draft - proposed Q2' },
-    ];
+    // Legacy vendorBudgets kept for allocation chart compat — vendorMonthly is the source of truth
+    appState.vendorBudgets = appState.vendorMonthly.filter(vm => vm.category === 'Programs').map(vm => ({
+        vendor: vm.vendor, subcategory: vm.subcategory, category: vm.category,
+        q1: (vm.jan||0)+(vm.feb||0)+(vm.mar||0), q2: (vm.apr||0)+(vm.may||0)+(vm.jun||0),
+        q3: (vm.jul||0)+(vm.aug||0)+(vm.sep||0), q4: (vm.oct||0)+(vm.nov||0)+(vm.dec||0),
+        notes: vm.notes || ''
+    }));
     // vendorMonthly: one row per vendor, monthly plan values
+    // Sources: 2026 Field Marketing Budget Tracker.xlsx (TOTALS + event tabs) + Marketing Retro PPTX (Q2 confirmed items)
     appState.vendorMonthly = [
-        // Programs — Advertising
+        // ── Programs — Advertising (recurring) ──
         { vendor: 'LinkedIn Ads', subcategory: 'Advertising', category: 'Programs',
           oct25: 950, nov25: 950, dec25: 950,
           jan: 950, feb: 950, mar: 950, apr: 950, may: 950, jun: 950,
@@ -471,30 +471,82 @@ function loadFallbackData() {
           oct25: 850, nov25: 850, dec25: 850,
           jan: 850, feb: 850, mar: 850, apr: 850, may: 850, jun: 850,
           jul: 850, aug: 850, sep: 850, oct: 850, nov: 850, dec: 850, notes: '' },
-        // Programs — Events
+        // ── Programs — Events (recurring materials) ──
         { vendor: 'Paperclip Promotions', subcategory: 'Events', category: 'Programs',
           oct25: 0, nov25: 450, dec25: 500,
           jan: 300, feb: 300, mar: 300, apr: 300, may: 300, jun: 300,
-          jul: 300, aug: 300, sep: 300, oct: 300, nov: 300, dec: 300, notes: '' },
+          jul: 300, aug: 300, sep: 300, oct: 300, nov: 300, dec: 300, notes: 'Event materials ~$300/mo' },
         { vendor: 'American Express', subcategory: 'Events', category: 'Programs',
           oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Events via AmEx card' },
-        { vendor: 'Docebo Annual Conference', subcategory: 'Events', category: 'Programs',
+        // ── Programs — Events (Q2 confirmed) — from PPTX + Excel TOTALS ──
+        { vendor: 'Docebo Inspire', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 25000, may: 0, jun: 0,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Apr 20-22, Miami. $250 actual so far' },
+        { vendor: 'ATD Conference', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 9000, jun: 0,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'May 17-20, Los Angeles. Confirmed' },
+        { vendor: 'Bb Durham TLC', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 1800, may: 0, jun: 0,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL. Budget $1,800' },
+        { vendor: 'Class Day Spain', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 2000,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL reseller event (eLearnia)' },
+        { vendor: 'Class Day Germany', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 2000,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL reseller event' },
+        // ── Programs — Events (Q2 draft / on hold) ──
+        { vendor: 'ASU+GSV Summit', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 30000, may: 0, jun: 0,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft — estimate, not in TOTALS budget', isDraft: true },
+        { vendor: 'Class Day Nairobi', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 1500, jun: 0,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft — On Hold as of 11/3', isDraft: true },
+        { vendor: 'Cornerstone Spark', subcategory: 'Events', category: 'Programs',
           oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
-          jul: 0, aug: 0, sep: 12000, oct: 0, nov: 0, dec: 0, notes: 'Draft', isDraft: true },
-        // Programs — Mktg Ops
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft — Q2, costs TBD', isDraft: true },
+        // ── Programs — Events (Q3) ──
+        { vendor: 'Class Day Italy', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
+          jul: 1500, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL reseller event' },
+        { vendor: 'Bb Together User Conference', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
+          jul: 0, aug: 1000, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'BD. TBC costs w/ Russell' },
+        { vendor: 'D2L Fusion', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
+          jul: 0, aug: 0, sep: 24350, oct: 0, nov: 0, dec: 0, notes: 'Draft — estimate from event tab', isDraft: true },
+        { vendor: 'Class Day Dubai', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
+          jul: 0, aug: 0, sep: 2000, oct: 0, nov: 0, dec: 0, notes: 'Draft — may not take place', isDraft: true },
+        // ── Programs — Events (Q4) ──
+        { vendor: 'DevLearn', subcategory: 'Events', category: 'Programs',
+          oct25: 0, nov25: 0, dec25: 0,
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
+          jul: 0, aug: 0, sep: 0, oct: 12000, nov: 0, dec: 0, notes: 'Corp. Budget $12,000' },
+        // ── Programs — Mktg Ops ──
         { vendor: 'Sponge Software', subcategory: 'Mktg Ops', category: 'Programs',
           oct25: 6500, nov25: 6500, dec25: 6500,
           jan: 0, feb: 7700, mar: 7700, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Terminated after Q1' },
-        // Programs — Webinars
-        { vendor: 'Sponsored Webinar Series', subcategory: 'Webinars', category: 'Programs',
+        // ── Programs — Webinars ──
+        { vendor: 'TM Sponsored Webinar', subcategory: 'Webinars', category: 'Programs',
           oct25: 0, nov25: 0, dec25: 0,
-          jan: 0, feb: 0, mar: 0, apr: 0, may: 8000, jun: 0,
-          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft', isDraft: true },
-        // T&E
+          jan: 0, feb: 0, mar: 0, apr: 0, may: 9000, jun: 0,
+          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Training Magazine — confirmed Q2, $9K' },
+        // ── T&E ──
         { vendor: 'Ed Miller', subcategory: 'Lodging', category: 'T&E',
           oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
