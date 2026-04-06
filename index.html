@@ -51,19 +51,18 @@
 
     <!-- Tab Navigation -->
     <nav class="tab-nav" id="tabNav" role="tablist" aria-label="Budget sections">
-        <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true" aria-controls="tab-dashboard">Dashboard</button>
+        <button class="tab-btn active" id="tab-btn-dashboard" data-tab="dashboard" role="tab" aria-selected="true" aria-controls="tab-dashboard">Dashboard</button>
         <div class="tab-divider" role="presentation"></div>
-        <button class="tab-btn" data-tab="budget" role="tab" aria-selected="false" aria-controls="tab-budget">Budget</button>
+        <button class="tab-btn" id="tab-btn-budget" data-tab="budget" role="tab" aria-selected="false" aria-controls="tab-budget">Budget</button>
         <div class="tab-divider" role="presentation"></div>
-        <button class="tab-btn" data-tab="expenses" role="tab" aria-selected="false" aria-controls="tab-expenses">Expenses</button>
+        <button class="tab-btn" id="tab-btn-expenses" data-tab="expenses" role="tab" aria-selected="false" aria-controls="tab-expenses">Expenses</button>
     </nav>
 
     <!-- Main Content -->
     <main class="main-content" id="mainContent">
-        <div class="tab-content active" id="tab-dashboard" role="tabpanel" aria-labelledby="tab-dashboard"></div>
-        <div class="tab-content" id="tab-budget" role="tabpanel" aria-labelledby="tab-budget"></div>
-        <div class="tab-content" id="tab-expenses" role="tabpanel" aria-labelledby="tab-expenses"></div>
-        <div class="tab-content" id="tab-software" role="tabpanel" aria-labelledby="tab-software"></div>
+        <div class="tab-content active" id="tab-dashboard" role="tabpanel" aria-labelledby="tab-btn-dashboard"></div>
+        <div class="tab-content" id="tab-budget" role="tabpanel" aria-labelledby="tab-btn-budget"></div>
+        <div class="tab-content" id="tab-expenses" role="tabpanel" aria-labelledby="tab-btn-expenses"></div>
     </main>
 
     <!-- Modal Overlay -->
