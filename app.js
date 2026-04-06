@@ -1005,31 +1005,18 @@ function renderDashboard() {
     html += `<div class="chart-card"><div class="chart-title">Cumulative Spend vs Budget Pace (Programs + T&E)</div><div class="chart-wrapper"><canvas id="cumulativeChart"></canvas></div></div>`;
     html += '</div>';
 
-    // Charts row 2: Subcategory Breakdown
+    // Charts row 2: Subcategory + Monthly Actual vs Forecast
     html += '<div class="chart-grid">';
     html += `<div class="chart-card"><div class="chart-title">Programs Spend by Subcategory (Actual + Committed)</div><div class="chart-wrapper"><canvas id="subcategoryChart"></canvas></div></div>`;
     html += `<div class="chart-card"><div class="chart-title">Monthly Spend — Actual vs Forecast</div><div class="chart-wrapper"><canvas id="monthlyActualForecastChart"></canvas></div></div>`;
     html += '</div>';
-
-    // Charts row 3: Category Utilization
-    html += '<div class="chart-grid">';
-    html += `<div class="chart-card"><div class="chart-title">Budget Utilization by Category</div><div class="chart-wrapper"><canvas id="utilizationChart"></canvas></div></div>`;
-    html += '</div>';
-
-    // Assumptions panel — structured notes (matches mockup)
-    html += '<div class="section-card"><details class="assumptions-panel" open><summary>Budget Assumptions &amp; Notes</summary><div class="assumptions-notes">';
-    html += '<div class="assumption-note"><span class="assumption-label">Headcount basis</span><span class="assumption-detail">$336K budget is salary-only. Q1 actual includes tax, benefits, bonus, commissions</span></div>';
-    html += '<div class="assumption-note"><span class="assumption-label">Sponge Software</span><span class="assumption-detail">Terminated after Q1. $15,400 in Q1 was final spend. $0 from Q2 forward.</span></div>';
-    html += '<div class="assumption-note"><span class="assumption-label">Kate Bertram</span><span class="assumption-detail">PT Contractor — no fully-loaded cost multiplier applied</span></div>';
-    html += '<div class="assumption-note"><span class="assumption-label">T&E overpace</span><span class="assumption-detail">Ed Miller conference lodging (' + fmtWhole(c.ytdActual.te) + ') is a one-time Q1 event, not a recurring run rate</span></div>';
-    html += '</div></details></div>';
 
     el.innerHTML = html;
     renderDashboardCharts();
 }
 
 function renderDashboardCharts() {
-    destroyChart('quarterlyBar'); destroyChart('cumulative'); destroyChart('utilization');
+    destroyChart('quarterlyBar'); destroyChart('cumulative');
     destroyChart('subcategory'); destroyChart('monthlyActualForecast');
     const c = appState.computed;
     const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#0A1849';
@@ -1161,26 +1148,6 @@ function renderDashboardCharts() {
         });
     }
 
-    // 5. Budget Utilization — horizontal bar per category (actual/budget %)
-    const utilCtx = document.getElementById('utilizationChart');
-    if (utilCtx) {
-        const showHC = isHeadcountVisible();
-        const cats = showHC ? ['Programs', 'T&E', 'Headcount'] : ['Programs', 'T&E'];
-        const budgets = { 'Programs': CONFIG.BUDGET.programs, 'T&E': CONFIG.BUDGET.te, 'Headcount': CONFIG.BUDGET.headcount };
-        const actuals = { 'Programs': c.ytdActual.programs, 'T&E': c.ytdActual.te, 'Headcount': c.ytdActual.headcount };
-        const forecasts = { 'Programs': c.forecast.programs, 'T&E': c.forecast.te, 'Headcount': c.forecast.headcount };
-        const catColors = { 'Programs': 'rgba(71,57,231,0.7)', 'T&E': 'rgba(255,186,0,0.7)', 'Headcount': 'rgba(10,24,73,0.5)' };
-        const catColorsFc = { 'Programs': 'rgba(71,57,231,0.2)', 'T&E': 'rgba(255,186,0,0.2)', 'Headcount': 'rgba(10,24,73,0.15)' };
-        appState.charts.utilization = new Chart(utilCtx, {
-            type: 'bar',
-            data: { labels: cats, datasets: [
-                { label: 'YTD Actual', data: cats.map(c => actuals[c]), backgroundColor: cats.map(c => catColors[c]), borderRadius: 2 },
-                { label: 'Forecast', data: cats.map(c => forecasts[c]), backgroundColor: cats.map(c => catColorsFc[c]), borderRadius: 2 },
-                { label: 'Budget', data: cats.map(c => budgets[c]), type: 'line', borderColor: 'rgba(5,150,105,0.6)', borderDash: [6, 3], pointRadius: 4, pointBackgroundColor: 'rgba(5,150,105,0.8)', fill: false, tension: 0 }
-            ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
-        });
-    }
 }
 function destroyChart(name) { if (appState.charts[name]) { appState.charts[name].destroy(); appState.charts[name] = null; } }
 
@@ -1403,7 +1370,7 @@ function renderQuarterlyDetail() {
     html += '<div class="table-container"><div class="table-scroll">';
     html += '<table class="budget-detail-table"><thead><tr>';
     html += '<th style="width:24px"></th><th>Date</th><th>Vendor</th><th>Description</th>';
-    html += '<th>GL</th><th>Department</th><th class="num">Amount</th></tr></thead><tbody>';
+    html += '<th>Department</th><th class="num">Amount</th><th style="width:60px">Status</th></tr></thead><tbody>';
 
     let grandTotal = 0;
 
@@ -1423,9 +1390,9 @@ function renderQuarterlyDetail() {
         const toggleCls = isCollapsed ? 'collapsed' : '';
         html += `<tr class="category-row" tabindex="0" role="button" aria-expanded="${!isCollapsed}" onclick="toggleBudgetCategory('${esc(cat)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleBudgetCategory('${esc(cat)}');}">`;
         html += `<td class="expand-toggle ${toggleCls}">${toggleIcon}</td>`;
-        html += `<td colspan="4">${esc(cat.toUpperCase())}</td>`;
+        html += `<td colspan="3">${esc(cat.toUpperCase())}</td>`;
         html += `<td class="num budget-col">${quarterBudget ? 'Budget: ' + fmtWhole(quarterBudget) : ''}</td>`;
-        html += `<td class="num">${fmt(catAllTotal)}</td></tr>`;
+        html += `<td class="num">${fmt(catAllTotal)}</td><td></td></tr>`;
 
         if (!isCollapsed) {
             // Group by subcategory
@@ -1435,7 +1402,7 @@ function renderQuarterlyDetail() {
                 const subTotal = items.reduce((s, item) => s + item.amount, 0);
 
                 // Subcategory header
-                html += `<tr class="subcategory-row"><td></td><td colspan="5">${esc(subName)}</td><td class="num"></td></tr>`;
+                html += `<tr class="subcategory-row"><td></td><td colspan="4">${esc(subName)}</td><td class="num"></td><td></td></tr>`;
 
                 // Transaction/planned rows sorted by date
                 items.sort((a, b) => {
@@ -1444,35 +1411,39 @@ function renderQuarterlyDetail() {
                     return new Date(a.date) - new Date(b.date);
                 }).forEach(item => {
                     if (item._planned) {
-                        const statusCls = item._status === 'On Hold' ? 'on-hold' : (item._status === 'Tentative' ? 'tentative' : 'planned');
-                        let chipHtml = '';
-                        if (item._status === 'On Hold') chipHtml = ' <span class="status-chip hold">ON HOLD</span>';
-                        else if (item._status === 'Tentative') chipHtml = ' <span class="status-chip tentative">TENTATIVE</span>';
-                        else if (item._status === 'Confirmed') chipHtml = ' <span class="status-chip confirmed">CONFIRMED</span>';
                         const rowCls = item._status === 'On Hold' ? 'transaction-row on-hold' : 'transaction-row planned';
-                        html += `<tr class="${rowCls}">`;
+                        let chipHtml = '';
+                        if (item._status === 'On Hold') chipHtml = '<span class="status-chip hold">ON HOLD</span>';
+                        else if (item._status === 'Tentative') chipHtml = '<span class="status-chip tentative">TENTATIVE</span>';
+                        else if (item._status === 'Confirmed') chipHtml = '<span class="status-chip confirmed">CONFIRMED</span>';
+                        else chipHtml = '<span class="status-chip" style="background:rgba(71,57,231,0.1);color:var(--primary)">PLANNED</span>';
+                        // Find index in committedEvents for editing
+                        const ceIdx = (appState.committedEvents || []).findIndex(e => e.vendor === item.vendor && e.quarter === item.quarter && e.amount === item.amount);
+                        const editClick = ceIdx >= 0 ? ` ondblclick="editCommittedEvent(${ceIdx})"` : '';
+                        const statusClick = ceIdx >= 0 ? ` onclick="cycleCommittedStatus(${ceIdx})" style="cursor:pointer" title="Click to change status"` : '';
+                        html += `<tr class="${rowCls}"${editClick}>`;
                         html += `<td></td>`;
                         html += `<td class="planned-date">${esc(item.date)}</td>`;
-                        html += `<td>${esc(item.vendor)}${chipHtml}</td>`;
+                        html += `<td>${esc(item.vendor)}</td>`;
                         html += `<td>${esc(item.memo)}</td>`;
-                        html += `<td>${esc(item.gl)}</td>`;
                         html += `<td>${esc(item.department)}</td>`;
-                        html += `<td class="num planned-amount${item._status === 'On Hold' ? ' muted' : ''}">${fmt(item.amount)}</td></tr>`;
+                        html += `<td class="num planned-amount${item._status === 'On Hold' ? ' muted' : ''}">${fmt(item.amount)}</td>`;
+                        html += `<td${statusClick}>${chipHtml}</td></tr>`;
                     } else {
                         html += `<tr class="transaction-row" oncontextmenu="showContextMenu(event,${item._row})">`;
                         html += `<td></td>`;
-                        html += `<td>${esc(item.date)}</td>`;
-                        html += `<td>${esc(item.vendor)}</td>`;
-                        html += `<td>${esc(item.memo)}</td>`;
-                        html += `<td>${esc(item.gl)}</td>`;
-                        html += `<td>${esc(item.department)}</td>`;
-                        html += `<td class="num">${fmt(item.amount)}</td></tr>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${item._row},'date')">${esc(item.date)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${item._row},'vendor')">${esc(item.vendor)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${item._row},'memo')">${esc(item.memo)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${item._row},'department')">${esc(item.department)}</td>`;
+                        html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${item._row},'amount')">${fmt(item.amount)}</td>`;
+                        html += `<td>${statusPill(item.status)}</td></tr>`;
                     }
                 });
 
                 // Subcategory subtotal
                 if (items.length > 1) {
-                    html += `<tr class="subtotal-row"><td></td><td colspan="5">Subtotal: ${esc(subName)}</td><td class="num">${fmt(subTotal)}</td></tr>`;
+                    html += `<tr class="subtotal-row"><td></td><td colspan="4">Subtotal: ${esc(subName)}</td><td class="num">${fmt(subTotal)}</td><td></td></tr>`;
                 }
             });
         }
@@ -1480,22 +1451,22 @@ function renderQuarterlyDetail() {
         // Category total with budget comparison
         const variance = catAllTotal - quarterBudget;
         html += `<tr class="category-total-row"><td></td>`;
-        html += `<td colspan="3">TOTAL ${esc(cat.toUpperCase())}</td>`;
-        html += `<td class="num budget-comparison">${quarterBudget ? fmtWhole(quarterBudget) : ''}</td>`;
+        html += `<td colspan="2">TOTAL ${esc(cat.toUpperCase())}</td>`;
+        html += `<td class="num budget-comparison">${quarterBudget ? 'Budget: ' + fmtWhole(quarterBudget) : ''}</td>`;
         if (quarterBudget) {
             html += `<td class="num variance ${variance > 0 ? 'positive' : 'negative'}">${variance > 0 ? '+' : ''}${fmtWhole(variance)}</td>`;
         } else {
             html += `<td></td>`;
         }
-        html += `<td class="num">${fmt(catAllTotal)}</td></tr>`;
+        html += `<td class="num">${fmt(catAllTotal)}</td><td></td></tr>`;
 
         if (inGrandTotal) grandTotal += catAllTotal;
     });
 
     // Grand total
     html += `<tr class="grand-total-row"><td></td>`;
-    html += `<td colspan="5">GRAND TOTAL — ALL MARKETING ${quarterLabel(q).toUpperCase()}</td>`;
-    html += `<td class="num">${fmt(grandTotal)}</td></tr>`;
+    html += `<td colspan="4">GRAND TOTAL — ALL MARKETING ${quarterLabel(q).toUpperCase()}</td>`;
+    html += `<td class="num">${fmt(grandTotal)}</td><td></td></tr>`;
     html += '</tbody></table></div></div>';
 
     return html;
@@ -1568,6 +1539,65 @@ function selectBudgetQuarter(q) {
 function toggleBudgetCategory(cat) {
     appState.budgetCollapsed[cat] = !appState.budgetCollapsed[cat];
     renderCalendar();
+}
+function editCommittedEvent(idx) {
+    const e = appState.committedEvents[idx];
+    if (!e) return;
+    const overlay = document.getElementById('modalOverlay');
+    document.getElementById('modalTitle').textContent = 'Edit Committed Event';
+    const statusOpts = ['Confirmed', 'On Hold', 'Tentative', 'Cancelled'].map(s =>
+        `<option value="${s}" ${e.status === s ? 'selected' : ''}>${s}</option>`
+    ).join('');
+    document.getElementById('modalBody').innerHTML = `
+        <div class="form-group"><label class="form-label">Vendor</label><input type="text" class="form-input" id="ceVendor" value="${esc(e.vendor)}"></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Amount</label><input type="number" class="form-input" id="ceAmount" step="0.01" value="${e.amount}"></div>
+        <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="ceStatus">${statusOpts}</select></div></div>
+        <div class="form-group"><label class="form-label">Date</label><input type="text" class="form-input" id="ceDate" value="${esc(e.date)}"></div>
+        <div class="form-group"><label class="form-label">Description</label><input type="text" class="form-input" id="ceMemo" value="${esc(e.memo)}"></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Department</label><input type="text" class="form-input" id="ceDept" value="${esc(e.dept)}"></div>
+        <div class="form-group"><label class="form-label">Category</label><select class="form-select" id="ceCat"><option value="Programs" ${e.category === 'Programs' ? 'selected' : ''}>Programs</option><option value="T&E" ${e.category === 'T&E' ? 'selected' : ''}>T&E</option></select></div></div>
+    `;
+    document.getElementById('modalFooter').innerHTML = `
+        <button class="btn btn-danger" onclick="deleteCommittedEvent(${idx})">Delete</button>
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveCommittedEvent(${idx})">Save</button>
+    `;
+    overlay.classList.add('active');
+}
+function saveCommittedEvent(idx) {
+    const e = appState.committedEvents[idx];
+    if (!e) return;
+    e.vendor = document.getElementById('ceVendor').value.trim();
+    e.amount = parseFloat(document.getElementById('ceAmount').value) || 0;
+    e.status = document.getElementById('ceStatus').value;
+    e.date = document.getElementById('ceDate').value.trim();
+    e.memo = document.getElementById('ceMemo').value.trim();
+    e.dept = document.getElementById('ceDept').value.trim();
+    e.category = document.getElementById('ceCat').value;
+    // Update matching vendorMonthly entry if exists
+    const vm = appState.vendorMonthly.find(v => v.vendor === e.vendor);
+    if (vm) {
+        const mk = CONFIG.MONTHS[monthIdx(e.month)];
+        if (mk) { const key = mk.toLowerCase().substring(0, 3); vm[key] = e.amount; }
+    }
+    closeModal(); recompute(); renderActiveTab();
+    showToast('Updated: ' + e.vendor, 'success');
+}
+function deleteCommittedEvent(idx) {
+    const e = appState.committedEvents[idx];
+    if (!confirm('Delete ' + e.vendor + '?')) return;
+    appState.committedEvents.splice(idx, 1);
+    closeModal(); recompute(); renderActiveTab();
+    showToast('Deleted: ' + e.vendor, 'info');
+}
+function cycleCommittedStatus(idx) {
+    const e = appState.committedEvents[idx];
+    if (!e) return;
+    const statuses = ['Confirmed', 'On Hold', 'Tentative', 'Cancelled'];
+    const cur = statuses.indexOf(e.status);
+    e.status = statuses[(cur + 1) % statuses.length];
+    recompute(); renderActiveTab();
+    showToast(e.vendor + ': ' + e.status, 'info');
 }
 function budgetExpandAll() { appState.budgetCollapsed = {}; renderCalendar(); }
 function budgetCollapseAll() {
