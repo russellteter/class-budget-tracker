@@ -340,7 +340,7 @@ function parseTransactions(rows) {
         category: r[7] || '', subcategory: r[8] || '', month: r[9] || '', quarter: r[10] || '',
         year: parseInt(r[11]) || 2026, status: r[12] || 'Actual',
         isCarryover: (r[13] || '').toLowerCase() === 'yes', employeeType: r[14] || ''
-    })).filter(t => t.amount !== 0 || t.vendor);
+    })).filter(t => (t.amount !== 0 || t.vendor) && t.year >= 2026);
 }
 function parseBudget(rows) {
     if (!rows || rows.length < 2) return;
