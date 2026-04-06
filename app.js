@@ -275,10 +275,14 @@ async function fetchAllSheets() {
             const parser = parsers[tabName];
             if (parser && vr.values) parser(vr.values);
         });
-        appState.lastSynced = new Date(); recompute(); renderActiveTab();
+        appState.lastSynced = new Date();
+        appState.isSyncing = false; refreshBtn.classList.remove('spinning'); updateFreshness();
+        recompute(); renderActiveTab();
         showToast('Data loaded from Google Sheets', 'success');
-    } catch (err) { console.error(err); showToast('Sheets error: ' + err.message.substring(0, 80) + '. Using fallback.', 'warning'); loadFallbackData(); }
-    finally { appState.isSyncing = false; refreshBtn.classList.remove('spinning'); updateFreshness(); }
+    } catch (err) {
+        console.error(err); appState.isSyncing = false; refreshBtn.classList.remove('spinning'); updateFreshness();
+        showToast('Sheets error: ' + err.message.substring(0, 80) + '. Using fallback.', 'warning'); loadFallbackData();
+    }
 }
 // Token refresh wrapper — retries on 401 with a fresh token
 async function sheetsApiCall(fn) {
