@@ -13,7 +13,7 @@ const CONFIG = {
     SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
     API_BASE: 'https://sheets.googleapis.com/v4/spreadsheets',
     ADMIN_EMAILS: ['russell.teter@class.com', 'russellteter@gmail.com', 'russell@classtechnologies.com'],
-    SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B', 'Vendor Budgets!A:H'],
+    SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B'],
     MONTHS: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     QUARTERS: { Q1: ['Jan', 'Feb', 'Mar'], Q2: ['Apr', 'May', 'Jun'], Q3: ['Jul', 'Aug', 'Sep'], Q4: ['Oct', 'Nov', 'Dec'] },
     BUDGET: { headcount: 336914, programs: 90000, te: 20000, total: 446914 },
@@ -266,7 +266,7 @@ async function fetchAllSheets() {
         const parsers = {
             'Transactions': parseTransactions, 'Budget': parseBudget,
             'Commitments': parseCommitments, 'Vendor Contracts': parseVendorContracts,
-            'Config': parseConfig, 'Vendor Budgets': parseVendorBudgets
+            'Config': parseConfig
         };
         // Start with fallback data as baseline, then overlay Sheets data
         loadFallbackData();
@@ -275,11 +275,8 @@ async function fetchAllSheets() {
             const parser = parsers[tabName];
             if (parser && vr.values) parser(vr.values);
         });
-        const loaded = rd.map(vr => (vr.range || '').split('!')[0].replace(/'/g, ''));
-        const skipped = CONFIG.SHEET_RANGES.map(r => r.split('!')[0]).filter(t => !existingTabs.includes(t));
         appState.lastSynced = new Date(); recompute(); renderActiveTab();
-        if (skipped.length > 0) showToast('Loaded ' + loaded.length + ' tabs. Missing: ' + skipped.join(', '), 'info', 5000);
-        else showToast('Data loaded from Google Sheets', 'success');
+        showToast('Data loaded from Google Sheets', 'success');
     } catch (err) { console.error(err); showToast('Sheets error: ' + err.message.substring(0, 80) + '. Using fallback.', 'warning'); loadFallbackData(); }
     finally { appState.isSyncing = false; refreshBtn.classList.remove('spinning'); updateFreshness(); }
 }
