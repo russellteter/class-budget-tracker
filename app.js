@@ -1417,10 +1417,17 @@ function renderQuarterlyDetail() {
                         else if (item._status === 'Tentative') chipHtml = '<span class="status-chip tentative">TENTATIVE</span>';
                         else if (item._status === 'Confirmed') chipHtml = '<span class="status-chip confirmed">CONFIRMED</span>';
                         else chipHtml = '<span class="status-chip" style="background:rgba(71,57,231,0.1);color:var(--primary)">PLANNED</span>';
-                        // Find index in committedEvents for editing
+                        // Find source for editing — committedEvents or recurringCommitments
                         const ceIdx = (appState.committedEvents || []).findIndex(e => e.vendor === item.vendor && e.quarter === item.quarter && e.amount === item.amount);
-                        const editClick = ceIdx >= 0 ? ` ondblclick="editCommittedEvent(${ceIdx})"` : '';
-                        const statusClick = ceIdx >= 0 ? ` onclick="cycleCommittedStatus(${ceIdx})" style="cursor:pointer" title="Click to change status"` : '';
+                        const rcIdx = ceIdx < 0 ? (appState.recurringCommitments || []).findIndex(r => r.vendor === item.vendor) : -1;
+                        let editClick = '';
+                        let statusClick = '';
+                        if (ceIdx >= 0) {
+                            editClick = ` ondblclick="editCommittedEvent(${ceIdx})"`;
+                            statusClick = ` onclick="cycleCommittedStatus(${ceIdx})" style="cursor:pointer" title="Click to change status"`;
+                        } else if (rcIdx >= 0) {
+                            editClick = ` ondblclick="editRecurringCommitment(${rcIdx})"`;
+                        }
                         html += `<tr class="${rowCls}"${editClick}>`;
                         html += `<td></td>`;
                         html += `<td class="planned-date">${esc(item.date)}</td>`;
@@ -1598,6 +1605,52 @@ function cycleCommittedStatus(idx) {
     e.status = statuses[(cur + 1) % statuses.length];
     recompute(); renderActiveTab();
     showToast(e.vendor + ': ' + e.status, 'info');
+}
+function editRecurringCommitment(idx) {
+    const rc = appState.recurringCommitments[idx];
+    if (!rc) return;
+    const overlay = document.getElementById('modalOverlay');
+    document.getElementById('modalTitle').textContent = 'Edit Recurring Commitment';
+    document.getElementById('modalBody').innerHTML = `
+        <div class="form-group"><label class="form-label">Vendor</label><input type="text" class="form-input" id="rcVendor" value="${esc(rc.vendor)}"></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Monthly Amount</label><input type="number" class="form-input" id="rcAmount" step="0.01" value="${rc.monthlyAmount}"></div>
+        <div class="form-group"><label class="form-label">Category</label><select class="form-select" id="rcCat"><option value="Programs" ${rc.category === 'Programs' ? 'selected' : ''}>Programs</option><option value="T&E" ${rc.category === 'T&E' ? 'selected' : ''}>T&E</option></select></div></div>
+        <div class="form-group"><label class="form-label">Subcategory</label><input type="text" class="form-input" id="rcSub" value="${esc(rc.subcategory)}"></div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:8px">This recurring amount applies to all future months. Changes will be reflected across all quarters and views.</p>
+    `;
+    document.getElementById('modalFooter').innerHTML = `
+        <button class="btn btn-danger" onclick="deleteRecurringCommitment(${idx})">Delete</button>
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveRecurringCommitment(${idx})">Save</button>
+    `;
+    overlay.classList.add('active');
+}
+function saveRecurringCommitment(idx) {
+    const rc = appState.recurringCommitments[idx];
+    if (!rc) return;
+    const oldVendor = rc.vendor;
+    rc.vendor = document.getElementById('rcVendor').value.trim();
+    rc.monthlyAmount = parseFloat(document.getElementById('rcAmount').value) || 0;
+    rc.category = document.getElementById('rcCat').value;
+    rc.subcategory = document.getElementById('rcSub').value.trim();
+    // Update matching vendorMonthly entry
+    const vm = appState.vendorMonthly.find(v => v.vendor === oldVendor || v.vendor === rc.vendor);
+    if (vm) {
+        vm.vendor = rc.vendor; vm.category = rc.category; vm.subcategory = rc.subcategory;
+        const MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+        MONTH_KEYS.forEach((mk, mi) => {
+            if (mi >= rc.startMonth && mi <= rc.endMonth) vm[mk] = rc.monthlyAmount;
+        });
+    }
+    closeModal(); recompute(); renderActiveTab();
+    showToast('Updated: ' + rc.vendor + ' to ' + fmt(rc.monthlyAmount) + '/mo', 'success');
+}
+function deleteRecurringCommitment(idx) {
+    const rc = appState.recurringCommitments[idx];
+    if (!confirm('Delete recurring: ' + rc.vendor + '?')) return;
+    appState.recurringCommitments.splice(idx, 1);
+    closeModal(); recompute(); renderActiveTab();
+    showToast('Deleted: ' + rc.vendor, 'info');
 }
 function budgetExpandAll() { appState.budgetCollapsed = {}; renderCalendar(); }
 function budgetCollapseAll() {
