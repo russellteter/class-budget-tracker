@@ -12,6 +12,7 @@ const CONFIG = {
     CLIENT_ID: '1068018362027-1jmc2pq0ttv5tabrplgqscp7o7vqg0oi.apps.googleusercontent.com',
     SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
     API_BASE: 'https://sheets.googleapis.com/v4/spreadsheets',
+    ADMIN_EMAILS: ['russell.teter@class.com', 'russellteter@gmail.com', 'russell@classtechnologies.com'],
     SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B', 'Vendor Budgets!A:H'],
     MONTHS: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     QUARTERS: { Q1: ['Jan', 'Feb', 'Mar'], Q2: ['Apr', 'May', 'Jun'], Q3: ['Jul', 'Aug', 'Sep'], Q4: ['Oct', 'Nov', 'Dec'] },
@@ -190,23 +191,54 @@ function signIn() { if (!appState.tokenClient) { showToast('Auth not ready', 'wa
 function signOut() {
     if (appState.accessToken) google.accounts.oauth2.revoke(appState.accessToken);
     appState.accessToken = null; appState.isSignedIn = false; appState.userEmail = null;
-    updateAuthUI(); showToast('Signed out', 'info');
+    appState.audienceFilter = 'team';
+    appState.transactions = []; appState.vendorMonthly = []; appState.vendorContracts = [];
+    appState.budget = []; appState.committedEvents = []; appState.recurringCommitments = [];
+    recompute(); updateAuthUI(); renderActiveTab();
+    showToast('Signed out', 'info');
+}
+function isAdminUser() {
+    if (!appState.userEmail) return false;
+    return CONFIG.ADMIN_EMAILS.some(e => e.toLowerCase() === appState.userEmail.toLowerCase());
 }
 function updateAuthUI() {
     const signInBtn = document.getElementById('signInBtn'); const userInfo = document.getElementById('userInfo');
-    if (appState.isSignedIn) { signInBtn.style.display = 'none'; userInfo.style.display = 'flex'; fetchUserEmail(); }
-    else { signInBtn.style.display = 'inline-flex'; userInfo.style.display = 'none'; document.getElementById('userEmail').textContent = ''; }
+    const audienceSelect = document.getElementById('audienceFilter');
+    if (appState.isSignedIn) {
+        signInBtn.style.display = 'none'; userInfo.style.display = 'flex';
+        fetchUserEmail();
+    } else {
+        signInBtn.style.display = 'inline-flex'; userInfo.style.display = 'none';
+        document.getElementById('userEmail').textContent = '';
+        audienceSelect.style.display = 'none';
+    }
 }
 async function fetchUserEmail() {
     if (!appState.accessToken) return;
-    try { const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: 'Bearer ' + appState.accessToken } }); const d = await r.json(); appState.userEmail = d.email; document.getElementById('userEmail').textContent = d.email; } catch (e) {}
+    try {
+        const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: 'Bearer ' + appState.accessToken } });
+        const d = await r.json();
+        appState.userEmail = d.email;
+        document.getElementById('userEmail').textContent = d.email;
+        // Set audience based on identity
+        if (isAdminUser()) {
+            appState.audienceFilter = 'full';
+            document.getElementById('audienceFilter').value = 'full';
+            document.getElementById('audienceFilter').style.display = '';
+        } else {
+            appState.audienceFilter = 'team';
+            document.getElementById('audienceFilter').value = 'team';
+            document.getElementById('audienceFilter').style.display = 'none';
+        }
+        recompute(); renderActiveTab();
+    } catch (e) { console.error('Failed to fetch user email:', e); }
 }
 
 // ============================================================
 // 6. GOOGLE SHEETS API
 // ============================================================
 async function fetchAllSheets() {
-    if (!appState.accessToken) { loadFallbackData(); return; }
+    if (!appState.accessToken) { return; }
     appState.isSyncing = true; updateFreshness();
     const refreshBtn = document.getElementById('refreshBtn'); refreshBtn.classList.add('spinning');
     try {
@@ -979,15 +1011,14 @@ function renderDashboard() {
     html += `<div class="chart-card"><div class="chart-title">Cumulative Spend vs Budget Pace (Programs + T&E)</div><div class="chart-wrapper"><canvas id="cumulativeChart"></canvas></div></div>`;
     html += '</div>';
 
-    // Charts row 2: Programs Waterfall + Subcategory Breakdown
+    // Charts row 2: Subcategory Breakdown
     html += '<div class="chart-grid">';
-    html += `<div class="chart-card"><div class="chart-title">Programs Budget Waterfall</div><div class="chart-wrapper"><canvas id="waterfallChart"></canvas></div></div>`;
     html += `<div class="chart-card"><div class="chart-title">Programs Spend by Subcategory (Actual + Committed)</div><div class="chart-wrapper"><canvas id="subcategoryChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Monthly Spend — Actual vs Forecast</div><div class="chart-wrapper"><canvas id="monthlyActualForecastChart"></canvas></div></div>`;
     html += '</div>';
 
-    // Charts row 3: Monthly Actuals vs Forecast + Category Utilization
+    // Charts row 3: Category Utilization
     html += '<div class="chart-grid">';
-    html += `<div class="chart-card"><div class="chart-title">Monthly Spend — Actual vs Forecast</div><div class="chart-wrapper"><canvas id="monthlyActualForecastChart"></canvas></div></div>`;
     html += `<div class="chart-card"><div class="chart-title">Budget Utilization by Category</div><div class="chart-wrapper"><canvas id="utilizationChart"></canvas></div></div>`;
     html += '</div>';
 
@@ -1007,7 +1038,7 @@ function renderDashboard() {
 
 function renderDashboardCharts() {
     destroyChart('quarterlyBar'); destroyChart('cumulative'); destroyChart('utilization');
-    destroyChart('waterfall'); destroyChart('subcategory'); destroyChart('monthlyActualForecast');
+    destroyChart('subcategory'); destroyChart('monthlyActualForecast');
     const c = appState.computed;
     const textColor = '#0A1849';
     const gridColor = 'rgba(0,0,0,0.06)';
@@ -1089,25 +1120,7 @@ function renderDashboardCharts() {
         });
     }
 
-    // 3. Programs Budget Waterfall — Budget → Actual → Outstanding → Committed → Available
-    const wfCtx = document.getElementById('waterfallChart');
-    if (wfCtx) {
-        const wf = c.programsWaterfall;
-        const labels = ['Budget', 'Spent', 'Outstanding', 'Committed', 'Available'];
-        const data = [wf.budget, -wf.spent, -wf.outstanding, -wf.committed, wf.available];
-        const colors = data.map((v, i) => {
-            if (i === 0) return 'rgba(71,57,231,0.7)';
-            if (i === labels.length - 1) return wf.available >= 0 ? 'rgba(5,150,105,0.7)' : 'rgba(220,38,38,0.7)';
-            return 'rgba(220,38,38,0.5)';
-        });
-        appState.charts.waterfall = new Chart(wfCtx, {
-            type: 'bar',
-            data: { labels, datasets: [{ data: data.map(Math.abs), backgroundColor: colors, borderRadius: 2 }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtWhole(data[ctx.dataIndex]) } } }, scales: { x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
-        });
-    }
-
-    // 4. Programs Spend by Subcategory — same grouping as Budget tab
+    // 3. Programs Spend by Subcategory — same grouping as Budget tab
     const subCtx = document.getElementById('subcategoryChart');
     if (subCtx) {
         const progTx = tx2026.filter(t => t.category === 'Programs');
@@ -1137,7 +1150,7 @@ function renderDashboardCharts() {
         });
     }
 
-    // 5. Monthly Actual vs Forecast — dual bars showing actuals (solid) vs vendorMonthly plan (hatched)
+    // 4. Monthly Actual vs Forecast — dual bars showing actuals (solid) vs vendorMonthly plan (hatched)
     const mafCtx = document.getElementById('monthlyActualForecastChart');
     if (mafCtx) {
         const actualData = CONFIG.MONTHS.map(m => c.byMonth[m] ? c.byMonth[m].programs + c.byMonth[m].te : 0);
@@ -1155,7 +1168,7 @@ function renderDashboardCharts() {
         });
     }
 
-    // 6. Budget Utilization — horizontal bar per category (actual/budget %)
+    // 5. Budget Utilization — horizontal bar per category (actual/budget %)
     const utilCtx = document.getElementById('utilizationChart');
     if (utilCtx) {
         const showHC = isHeadcountVisible();
@@ -1508,6 +1521,11 @@ function renderBudgetToolbar(q) {
     html += `<button class="quarter-btn ${q === 'YTD' ? 'active' : ''}" onclick="selectBudgetQuarter('YTD')">YTD</button>`;
     html += `<button class="quarter-btn ${q === 'FULL' ? 'active' : ''}" onclick="selectBudgetQuarter('FULL')">Full Year</button>`;
     html += '</div>';
+    // Expand/Collapse
+    html += '<div style="display:flex;gap:6px;margin-left:auto">';
+    html += '<button class="zoom-btn" onclick="budgetExpandAll()">Expand All</button>';
+    html += '<button class="zoom-btn" onclick="budgetCollapseAll()">Collapse All</button>';
+    html += '</div>';
     // Source label
     html += '<span class="source-label">Source: NetSuite GL</span>';
     html += '</div>';
@@ -1549,6 +1567,11 @@ function selectBudgetQuarter(q) {
 
 function toggleBudgetCategory(cat) {
     appState.budgetCollapsed[cat] = !appState.budgetCollapsed[cat];
+    renderCalendar();
+}
+function budgetExpandAll() { appState.budgetCollapsed = {}; renderCalendar(); }
+function budgetCollapseAll() {
+    ['Programs', 'T&E', 'Headcount', 'Outside Envelope'].forEach(c => { appState.budgetCollapsed[c] = true; });
     renderCalendar();
 }
 
@@ -2421,7 +2444,7 @@ function bindEvents() {
     document.getElementById('presentationToggle').addEventListener('click', togglePresentation);
     document.getElementById('refreshBtn').addEventListener('click', () => {
         if (appState.isSignedIn) fetchAllSheets();
-        else { loadFallbackData(); showToast('Refreshed fallback data', 'info'); }
+        else showToast('Sign in to refresh data', 'warning');
     });
     document.getElementById('audienceFilter').addEventListener('change', (e) => { appState.audienceFilter = e.target.value; recompute(); renderActiveTab(); });
     document.getElementById('modalClose').addEventListener('click', closeModal);
@@ -2443,8 +2466,17 @@ function bindEvents() {
     setInterval(updateFreshness, 60000);
 }
 
+function renderSignInPrompt() {
+    const tabs = ['tab-dashboard', 'tab-budget', 'tab-expenses', 'tab-software'];
+    tabs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="empty-state" style="padding:60px 20px"><p style="font-size:16px;font-weight:600;margin-bottom:8px">Sign in to view budget data</p><p style="font-size:12px">Authenticate with your Google account to access the marketing budget tracker.</p></div>';
+    });
+}
 function init() {
-    bindEvents(); initAuth(); loadFallbackData();
+    bindEvents(); initAuth();
+    // Don't load data until authenticated — show sign-in prompt
+    renderSignInPrompt();
     const loader = document.getElementById('loadingOverlay');
     setTimeout(() => loader.classList.add('hidden'), 300);
 }
