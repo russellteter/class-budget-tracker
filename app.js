@@ -729,11 +729,27 @@ function shouldShowIndividualHC() { return appState.audienceFilter === 'full'; }
 // ============================================================
 function switchTab(tab) {
     appState.activeTab = tab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tab-btn').forEach(b => {
+        const isActive = b.dataset.tab === tab;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
     renderActiveTab();
 }
 function renderActiveTab() {
+    // Show skeleton shimmer states while data is loading
+    if (appState.isSyncing) {
+        const skeletonRenderers = {
+            dashboard: renderDashboardSkeleton,
+            budget: renderBudgetSkeleton,
+            expenses: renderExpensesSkeleton,
+            software: renderSoftwareSkeleton
+        };
+        const skFn = skeletonRenderers[appState.activeTab];
+        if (skFn) skFn();
+        return;
+    }
     const renderers = {
         dashboard: renderDashboard,
         budget: renderCalendar,
@@ -742,6 +758,62 @@ function renderActiveTab() {
     };
     const fn = renderers[appState.activeTab];
     if (fn) fn();
+}
+
+// --- Skeleton loading states ---
+function renderDashboardSkeleton() {
+    const el = document.getElementById('tab-dashboard');
+    let html = '<div class="kpi-grid">';
+    html += '<div class="skeleton skeleton-kpi hero"></div>';
+    html += '<div class="skeleton skeleton-kpi"></div>';
+    html += '<div class="skeleton skeleton-kpi"></div>';
+    html += '<div class="skeleton skeleton-kpi"></div>';
+    html += '<div class="skeleton skeleton-kpi"></div>';
+    html += '</div>';
+    html += '<div class="chart-grid">';
+    html += '<div class="skeleton skeleton-chart"></div>';
+    html += '<div class="skeleton skeleton-chart"></div>';
+    html += '</div>';
+    html += '<div class="chart-grid">';
+    html += '<div class="skeleton skeleton-chart"></div>';
+    html += '<div class="skeleton skeleton-chart"></div>';
+    html += '</div>';
+    html += '<div class="skeleton skeleton-section" style="margin-top:10px"></div>';
+    el.innerHTML = html;
+}
+function renderBudgetSkeleton() {
+    const el = document.getElementById('tab-budget');
+    let html = '<div style="display:flex;gap:12px;margin-bottom:10px">';
+    html += '<div class="skeleton skeleton-toolbar"></div>';
+    html += '<div class="skeleton skeleton-toolbar" style="width:30%"></div>';
+    html += '</div>';
+    html += '<div class="skeleton skeleton-bar" style="margin-bottom:10px"></div>';
+    html += '<div class="skeleton skeleton-table"></div>';
+    el.innerHTML = html;
+}
+function renderExpensesSkeleton() {
+    const el = document.getElementById('tab-expenses');
+    let html = '<div style="display:flex;gap:8px;margin-bottom:8px">';
+    html += '<div class="skeleton skeleton-toolbar" style="width:25%"></div>';
+    html += '<div class="skeleton skeleton-toolbar" style="width:50%"></div>';
+    html += '<div class="skeleton skeleton-toolbar" style="width:15%"></div>';
+    html += '</div>';
+    html += '<div class="skeleton skeleton-table" style="height:400px"></div>';
+    el.innerHTML = html;
+}
+function renderSoftwareSkeleton() {
+    const el = document.getElementById('tab-software');
+    let html = '<div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">';
+    html += '<div class="skeleton skeleton-kpi"></div>';
+    html += '<div class="skeleton skeleton-kpi"></div>';
+    html += '<div class="skeleton skeleton-kpi"></div>';
+    html += '</div>';
+    html += '<div class="chart-grid">';
+    html += '<div class="skeleton skeleton-chart"></div>';
+    html += '<div class="skeleton skeleton-chart"></div>';
+    html += '</div>';
+    html += '<div class="skeleton skeleton-section" style="margin-top:10px"></div>';
+    el.innerHTML = html;
 }
 
 // ============================================================
@@ -984,9 +1056,10 @@ function renderDashboardCharts() {
     destroyChart('quarterlyBar'); destroyChart('cumulative'); destroyChart('utilization');
     destroyChart('subcategory'); destroyChart('monthlyActualForecast');
     const c = appState.computed;
-    const textColor = '#0A1849';
+    const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#0A1849';
     const gridColor = 'rgba(0,0,0,0.06)';
-    const fontOpts = { family: "'Inter', sans-serif", size: 10 };
+    const fontOpts = { family: "'Inter', sans-serif", size: 11 };
+    const legendOpts = { position: 'bottom', labels: { font: { ...fontOpts, size: 11 }, color: textColor, boxWidth: 12, padding: 12 } };
     const curIdx = getCurrentMonthIdx();
     const MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
     const tx2026 = appState.transactions.filter(t => t.year === 2026);
@@ -1018,7 +1091,7 @@ function renderDashboardCharts() {
         appState.charts.quarterlyBar = new Chart(qBarCtx, {
             type: 'bar',
             data: { labels: qLabels, datasets },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 
@@ -1060,7 +1133,7 @@ function renderDashboardCharts() {
                 { label: 'Forecast (vendorMonthly)', data: forecastCum, borderColor: 'rgba(107,114,128,0.5)', borderDash: [4, 4], backgroundColor: 'rgba(107,114,128,0.04)', fill: true, tension: 0.3, pointRadius: 2, spanGaps: false },
                 { label: 'Budget Pace', data: paceLine, borderColor: 'rgba(5,150,105,0.6)', borderDash: [8, 4], pointRadius: 0, fill: false, tension: 0 }
             ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
         });
     }
 
@@ -1090,7 +1163,7 @@ function renderDashboardCharts() {
                 { label: 'YTD Actual', data: allSubs.map(s => subActuals[s] || 0), backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 },
                 { label: 'Committed (Q2-Q4)', data: allSubs.map(s => subCommitted[s] || 0), backgroundColor: 'rgba(71,57,231,0.2)', borderRadius: 2 }
             ]},
-            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { stacked: true, ticks: { font: { ...fontOpts, size: 9 }, color: textColor }, grid: { display: false } }, x: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { stacked: true, ticks: { font: { ...fontOpts, size: 9 }, color: textColor }, grid: { display: false } }, x: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 
@@ -1108,7 +1181,7 @@ function renderDashboardCharts() {
                 { label: 'Actual', data: actualData.map((v, i) => i <= curIdx ? v : null), backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 },
                 { label: 'Plan (vendorMonthly)', data: forecastData, backgroundColor: 'rgba(71,57,231,0.12)', borderColor: 'rgba(71,57,231,0.3)', borderWidth: 1, borderRadius: 2 }
             ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 
@@ -1129,7 +1202,7 @@ function renderDashboardCharts() {
                 { label: 'Forecast', data: cats.map(c => forecasts[c]), backgroundColor: cats.map(c => catColorsFc[c]), borderRadius: 2 },
                 { label: 'Budget', data: cats.map(c => budgets[c]), type: 'line', borderColor: 'rgba(5,150,105,0.6)', borderDash: [6, 3], pointRadius: 4, pointBackgroundColor: 'rgba(5,150,105,0.8)', fill: false, tension: 0 }
             ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 }
@@ -1336,7 +1409,21 @@ function renderQuarterlyDetail() {
     let html = renderBudgetToolbar(q);
     html += renderBudgetSummaryBar(q, filtered, planned);
 
-    // 5. Build detail table
+    // 5. Empty state: if no transactions and no planned items for this quarter
+    if (filtered.length === 0 && planned.length === 0 && q !== 'YTD' && q !== 'FULL') {
+        html += '<div class="empty-state-quarter">';
+        html += `<p>No transactions in ${quarterLabel(q)}</p>`;
+        if (isFuture) {
+            html += '<p>Committed and planned items will appear here as they are confirmed.</p>';
+            html += '<div class="hint">Switch to YTD or a past quarter to see recorded spend.</div>';
+        } else {
+            html += '<p>No spend has been recorded for this period yet.</p>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    // 6. Build detail table
     html += '<div class="table-container"><div class="table-scroll">';
     html += '<table class="budget-detail-table"><thead><tr>';
     html += '<th style="width:24px"></th><th>Date</th><th>Vendor</th><th>Description</th>';
@@ -1355,10 +1442,10 @@ function renderQuarterlyDetail() {
         const isCollapsed = appState.budgetCollapsed[cat];
         const inGrandTotal = (cat !== 'Outside Envelope');
 
-        // Category header row
+        // Category header row — keyboard accessible with tabindex
         const toggleIcon = isCollapsed ? '&#9654;' : '&#9660;';
         const toggleCls = isCollapsed ? 'collapsed' : '';
-        html += `<tr class="category-row" onclick="toggleBudgetCategory('${esc(cat)}')">`;
+        html += `<tr class="category-row" tabindex="0" role="button" aria-expanded="${!isCollapsed}" onclick="toggleBudgetCategory('${esc(cat)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleBudgetCategory('${esc(cat)}');}">`;
         html += `<td class="expand-toggle ${toggleCls}">${toggleIcon}</td>`;
         html += `<td colspan="4">${esc(cat.toUpperCase())}</td>`;
         html += `<td class="num budget-col">${quarterBudget ? 'Budget: ' + fmtWhole(quarterBudget) : ''}</td>`;
@@ -2039,6 +2126,23 @@ function renderExpenses() {
     html += `<button class="btn btn-secondary" onclick="exportCSV()">CSV</button>`;
     if (!isPres) html += `<button class="btn btn-primary" data-action="add" onclick="openAddTxModal()">+ Add</button>`;
     html += '</div>';
+
+    // Empty state when no transactions match filters
+    if (filtered.length === 0) {
+        const hasFilters = f.search || f.category || f.quarter || f.status;
+        html += '<div class="empty-state-quarter">';
+        if (hasFilters) {
+            html += '<p>No transactions match your filters</p>';
+            html += '<p>Try broadening your search or clearing the filters above.</p>';
+        } else {
+            html += '<p>No transactions recorded</p>';
+            html += '<p>Transaction data will appear here once synced from Google Sheets.</p>';
+        }
+        html += '</div>';
+        el.innerHTML = html;
+        return;
+    }
+
     html += '<div class="table-container"><div class="table-scroll"><table>';
     const sortIcon = col => appState.txSort.col !== col ? '<span class="sort-indicator">↕</span>' : '<span class="sort-indicator">' + (appState.txSort.dir === 'asc' ? '↑' : '↓') + '</span>';
     const sortCls = col => appState.txSort.col !== col ? 'sortable' : 'sortable sort-' + appState.txSort.dir;
@@ -2295,9 +2399,10 @@ function updateSWForecast(vendor, field, value) {
 function renderSWCharts() {
     destroyChart('swBeforeAfter'); destroyChart('swSavings'); destroyChart('swForecast');
     const vendors = appState.vendorContracts;
-    const textColor = '#0A1849';
+    const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#0A1849';
     const gridColor = 'rgba(0,0,0,0.06)';
-    const fontOpts = { family: "'Inter', sans-serif", size: 10 };
+    const fontOpts = { family: "'Inter', sans-serif", size: 11 };
+    const legendOpts = { position: 'bottom', labels: { font: { ...fontOpts, size: 11 }, color: textColor, boxWidth: 12, padding: 12 } };
 
     // Before vs After
     const baCt = document.getElementById('swBeforeAfterChart');
@@ -2309,7 +2414,7 @@ function renderSWCharts() {
                 { label: 'Before', data: vendors.map(v => v.before), backgroundColor: 'rgba(220,38,38,0.6)', borderRadius: 2 },
                 { label: 'After', data: vendors.map(v => v.after), backgroundColor: 'rgba(5,150,105,0.6)', borderRadius: 2 }
             ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { ticks: { font: { ...fontOpts, size: 8 }, color: textColor, maxRotation: 45 }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { ticks: { font: { ...fontOpts, size: 9 }, color: textColor, maxRotation: 45 }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 
@@ -2320,7 +2425,7 @@ function renderSWCharts() {
         appState.charts.swSavings = new Chart(sCt, {
             type: 'bar',
             data: { labels: sorted.map(v => v.vendor), datasets: [{ label: 'Savings', data: sorted.map(v => v.savings), backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 }] },
-            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtWhole(ctx.raw) } } }, scales: { x: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, y: { ticks: { font: { ...fontOpts, size: 9 }, color: textColor }, grid: { display: false } } } }
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtWhole(ctx.raw) } } }, scales: { x: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, y: { ticks: { font: { ...fontOpts, size: 10 }, color: textColor }, grid: { display: false } } } }
         });
     }
 
@@ -2341,7 +2446,7 @@ function renderSWCharts() {
         }
         appState.charts.swForecast = new Chart(fCt, {
             type: 'line', data: { labels: CONFIG.MONTHS, datasets },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: legendOpts, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
         });
     }
 }
@@ -2408,10 +2513,23 @@ function bindEvents() {
         hideContextMenu();
     });
     document.addEventListener('click', hideContextMenu);
-    // Keyboard
+    // Keyboard — global shortcuts
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { closeModal(); closeDrillDown(); hideContextMenu(); if (appState.inlineEdit.active) cancelCellEdit(); if (appState.presentationMode) togglePresentation(); }
         if (e.key === 'p' && e.ctrlKey) { e.preventDefault(); togglePresentation(); }
+    });
+    // Tab navigation: arrow keys move between tab buttons when a tab has focus
+    document.getElementById('tabNav').addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        const tabs = Array.from(document.querySelectorAll('.tab-btn'));
+        const idx = tabs.indexOf(document.activeElement);
+        if (idx < 0) return;
+        e.preventDefault();
+        let next = e.key === 'ArrowRight' ? idx + 1 : idx - 1;
+        if (next < 0) next = tabs.length - 1;
+        if (next >= tabs.length) next = 0;
+        tabs[next].focus();
+        tabs[next].click();
     });
     setInterval(updateFreshness, 60000);
 }
