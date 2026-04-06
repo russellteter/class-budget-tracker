@@ -16,7 +16,7 @@ const CONFIG = {
     SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B', 'Vendor Budgets!A:H'],
     MONTHS: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     QUARTERS: { Q1: ['Jan', 'Feb', 'Mar'], Q2: ['Apr', 'May', 'Jun'], Q3: ['Jul', 'Aug', 'Sep'], Q4: ['Oct', 'Nov', 'Dec'] },
-    BUDGET: { headcount: 336000, programs: 90000, te: 20000, total: 446914 },
+    BUDGET: { headcount: 336914, programs: 90000, te: 20000, total: 446914 },
     GL_MAP: {
         '6101': { cat: 'Headcount', sub: 'Salary' },
         '6102': { cat: 'Headcount', sub: 'Bonus' },
@@ -499,7 +499,7 @@ function loadFallbackData() {
 
     appState.transactions = [...q4_2025, ...q1_programs, ...q1_te, ...q1_headcount, ...q1_outside];
     appState.budget = [
-        { category: 'Headcount', annual: 336000, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 28000; return o; }, {}) },
+        { category: 'Headcount', annual: 336914, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 28076.17; return o; }, {}) },
         { category: 'Programs', annual: 90000, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 7500; return o; }, {}) },
         { category: 'T&E', annual: 20000, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 1666.67; return o; }, {}) },
         { category: 'Outside Envelope', annual: 0, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 0; return o; }, {}) },
@@ -670,7 +670,7 @@ function recompute() {
         if (appState.disabledVendors[vm.vendor]) return;
         let vendorForecast = 0;
         MONTH_KEYS.forEach((mk, mi) => {
-            if (mi > curMonthIdx && (vm[mk] || 0) > 0) vendorForecast += vm[mk];
+            if (mi >= curMonthIdx && (vm[mk] || 0) > 0) vendorForecast += vm[mk];
         });
         if (vm.category === 'Headcount') c.forecast.headcount += vendorForecast;
         else if (vm.category === 'Programs') c.forecast.programs += vendorForecast;
@@ -972,24 +972,26 @@ function renderDashboard() {
     const tePct = CONFIG.BUDGET.te > 0 ? c.ytdActual.te / CONFIG.BUDGET.te : 0;
     const totalSavings = appState.vendorContracts.reduce((s, v) => s + v.savings, 0);
 
+    // Programs: actual + outstanding = total recognized
+    const progActualAndOutstanding = c.ytdActual.programs + c.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0);
+    const progCommitted = c.forecast.programs;
+    const progAvailable = CONFIG.BUDGET.programs - progActualAndOutstanding - progCommitted;
+    const progAvailCls = progAvailable > 10000 ? 'positive' : progAvailable > 0 ? 'warning' : 'negative';
+
     let html = '<div class="kpi-grid">';
-    // Hero: Programs Available for New Spend
-    const pctRemaining = wf.budget > 0 ? (wf.available / wf.budget) : 0;
-    html += `<div class="kpi-card hero ${wf.available < 10000 ? 'warning' : 'positive'}"><div class="kpi-label">Programs Available for New Spend</div><div class="kpi-value">${fmtWhole(wf.available)}</div><div class="kpi-progress"><div class="kpi-progress-bar ${progressColor(progPct)}" style="width:${Math.min(progPct * 100, 100)}%"></div></div><div class="kpi-subtext">${fmtPct(pctRemaining)} of ${fmtWhole(wf.budget)} remaining after actuals + commitments</div></div>`;
-    // Programs Q1 with pacing (includes outstanding items like Sponge $7,700)
-    const totalProgramsQ1 = c.ytdActual.programs + c.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0);
-    const progAnnualPace = totalProgramsQ1 * 4;
-    const progPaceWarning = progAnnualPace > CONFIG.BUDGET.programs;
-    html += `<div class="kpi-card"><div class="kpi-label">Programs Q1</div><div class="kpi-value">${fmtWhole(totalProgramsQ1)}</div><div class="kpi-trend ${progPaceWarning ? 'negative' : 'neutral'}" style="color:${progPaceWarning ? 'var(--color-warning)' : ''}">Pacing at ${fmtWhole(progAnnualPace)}/yr</div></div>`;
-    // T&E Q1 with pacing
-    const teAnnualPace = c.ytdActual.te * 4;
-    const tePaceWarning = teAnnualPace > CONFIG.BUDGET.te;
-    html += `<div class="kpi-card ${tePct > 0.5 ? 'warning' : ''}"><div class="kpi-label">T&E Q1</div><div class="kpi-value">${fmtWhole(c.ytdActual.te)}</div><div class="kpi-trend ${tePaceWarning ? 'negative' : 'neutral'}" style="color:${tePaceWarning ? 'var(--color-negative)' : ''}">Pacing at ${fmtWhole(teAnnualPace)}/yr</div></div>`;
-    // Headcount (Loaded)
+    // Hero: Programs Available
+    const usedPct = CONFIG.BUDGET.programs > 0 ? (progActualAndOutstanding + progCommitted) / CONFIG.BUDGET.programs : 0;
+    html += `<div class="kpi-card hero ${progAvailable < 5000 ? 'warning' : 'positive'}"><div class="kpi-label">Programs Available for New Spend</div><div class="kpi-value ${progAvailCls}">${fmtWhole(progAvailable)}</div><div class="kpi-progress"><div class="kpi-progress-bar ${progressColor(usedPct)}" style="width:${Math.min(usedPct * 100, 100)}%"></div></div><div class="kpi-subtext">${fmtWhole(CONFIG.BUDGET.programs)} budget &minus; ${fmtWhole(progActualAndOutstanding)} spent &minus; ${fmtWhole(progCommitted)} committed</div></div>`;
+    // Programs Spent YTD (actual + outstanding)
+    html += `<div class="kpi-card"><div class="kpi-label">Programs Spent YTD</div><div class="kpi-value">${fmtWhole(progActualAndOutstanding)}</div><div class="kpi-trend neutral">Includes ${fmtWhole(c.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0))} outstanding</div></div>`;
+    // T&E
+    const teAvailable = CONFIG.BUDGET.te - c.ytdActual.te - c.forecast.te;
+    html += `<div class="kpi-card ${c.ytdActual.te > CONFIG.BUDGET.te * 0.5 ? 'warning' : ''}"><div class="kpi-label">T&E Spent / Budget</div><div class="kpi-value">${fmtWhole(c.ytdActual.te)} / ${fmtWhole(CONFIG.BUDGET.te)}</div><div class="kpi-trend neutral">${fmtWhole(teAvailable)} available</div></div>`;
+    // Headcount
     if (showHC) {
-        html += `<div class="kpi-card"><div class="kpi-label">Headcount (Loaded)</div><div class="kpi-value">${fmtWhole(c.ytdActual.headcount)}</div><div class="kpi-trend neutral">Budget is salary-only (${fmtWhole(CONFIG.BUDGET.headcount)})</div></div>`;
+        html += `<div class="kpi-card"><div class="kpi-label">Headcount YTD</div><div class="kpi-value">${fmtWhole(c.ytdActual.headcount)}</div><div class="kpi-trend neutral">Budget: ${fmtWhole(CONFIG.BUDGET.headcount)} (salary-only basis)</div></div>`;
     }
-    // SW Savings Driven
+    // SW Savings
     html += `<div class="kpi-card positive"><div class="kpi-label">SW Savings Driven</div><div class="kpi-value">${fmtWhole(totalSavings)}</div><div class="kpi-trend positive">Annual, outside the $446K envelope</div></div>`;
     html += '</div>';
 
@@ -1186,12 +1188,8 @@ function destroyChart(name) { if (appState.charts[name]) { appState.charts[name]
 function getDefaultQuarter() {
     const now = new Date();
     const curMonth = now.getMonth(); // 0-indexed
-    const curDay = now.getDate();
     const curQIdx = Math.floor(curMonth / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
-    // If less than 15 days into current quarter, show previous quarter
-    const monthInQ = curMonth % 3;
-    const daysIntoQ = monthInQ * 30 + curDay;
-    if (daysIntoQ < 15 && curQIdx > 0) return 'Q' + curQIdx;
+    // Show the current quarter (Q1 for Jan-Mar, Q2 for Apr-Jun, etc.)
     return 'Q' + (curQIdx + 1);
 }
 
@@ -1490,23 +1488,23 @@ function renderQuarterlyDetail() {
 }
 
 function renderBudgetToolbar(q) {
-    const quarters = ['Q4_2025', 'Q1', 'Q2', 'Q3', 'Q4'];
-    const labels = { 'Q4_2025': "Q4 '25", 'Q1': 'Q1', 'Q2': 'Q2', 'Q3': 'Q3', 'Q4': 'Q4' };
     let html = '<div class="budget-toolbar">';
     // View toggle
     html += '<div class="view-toggle">';
     html += `<button class="view-btn ${appState.budgetView === 'quarterly' ? 'active' : ''}" onclick="switchBudgetView('quarterly')">Quarterly Detail</button>`;
     html += `<button class="view-btn ${appState.budgetView === 'monthly' ? 'active' : ''}" onclick="switchBudgetView('monthly')">Monthly Summary</button>`;
     html += '</div>';
-    // Quarter selector
+    // Quarter selector — Q1-Q4 are primary, Q4'25 is de-emphasized reference
     html += '<div class="quarter-selector">';
-    quarters.forEach(qk => {
+    ['Q1', 'Q2', 'Q3', 'Q4'].forEach(qk => {
         const hasData = quarterHasData(qk);
-        html += `<button class="quarter-btn ${q === qk ? 'active' : ''} ${hasData ? 'has-data' : ''}" onclick="selectBudgetQuarter('${qk}')">${labels[qk]}</button>`;
+        html += `<button class="quarter-btn ${q === qk ? 'active' : ''} ${hasData ? 'has-data' : ''}" onclick="selectBudgetQuarter('${qk}')">${qk}</button>`;
     });
     html += '<span class="quarter-sep">|</span>';
     html += `<button class="quarter-btn ${q === 'YTD' ? 'active' : ''}" onclick="selectBudgetQuarter('YTD')">YTD</button>`;
     html += `<button class="quarter-btn ${q === 'FULL' ? 'active' : ''}" onclick="selectBudgetQuarter('FULL')">Full Year</button>`;
+    html += '<span class="quarter-sep">|</span>';
+    html += `<button class="quarter-btn ${q === 'Q4_2025' ? 'active' : ''}" onclick="selectBudgetQuarter('Q4_2025')" style="font-size:9px;opacity:0.6">Q4 '25</button>`;
     html += '</div>';
     // Expand/Collapse
     html += '<div style="display:flex;gap:6px;margin-left:auto">';
@@ -1520,21 +1518,24 @@ function renderBudgetToolbar(q) {
 }
 
 function renderBudgetSummaryBar(q, filtered, planned) {
-    const totalSpend = filtered.reduce((s, t) => s + t.amount, 0);
-    const plannedTotal = (planned || []).reduce((s, p) => s + p.amount, 0);
-    const progTx = filtered.filter(t => t.category === 'Programs');
-    const progSpend = progTx.reduce((s, t) => s + t.amount, 0);
-    const progBudgetRow = appState.budget.find(b => b.category === 'Programs');
-    const progQBudget = progBudgetRow ? getQuarterBudget(progBudgetRow, q) : 0;
-    const progAvailable = CONFIG.BUDGET.programs - appState.computed.ytdActual.programs - appState.computed.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0) - appState.computed.forecast.programs;
+    const c = appState.computed;
+    // Programs: actual + outstanding = total recognized spend
+    const progActualAndOutstanding = c.ytdActual.programs + c.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0);
+    const progCommitted = c.forecast.programs;
+    const progAvailable = CONFIG.BUDGET.programs - progActualAndOutstanding - progCommitted;
     const progAvailCls = progAvailable > 10000 ? 'positive' : progAvailable > 0 ? 'warning' : 'negative';
 
+    // T&E: same pattern
+    const teActual = c.ytdActual.te;
+    const teAvailable = CONFIG.BUDGET.te - teActual - c.forecast.te;
+
     let html = '<div class="budget-summary-bar">';
-    html += `<div class="budget-summary-item"><span class="budget-summary-label">Annual Budget</span><span class="budget-summary-value">${fmtWhole(CONFIG.BUDGET.total)}</span></div>`;
-    html += `<div class="budget-summary-item"><span class="budget-summary-label">${quarterLabel(q)} Spend</span><span class="budget-summary-value">${fmtWhole(totalSpend)}</span></div>`;
-    html += `<div class="budget-summary-item"><span class="budget-summary-label">Budget Programs</span><span class="budget-summary-value">${fmtWhole(CONFIG.BUDGET.programs)}</span></div>`;
-    html += `<div class="budget-summary-item"><span class="budget-summary-label">Programs Spent</span><span class="budget-summary-value">${fmtWhole(progSpend)}</span></div>`;
-    html += `<div class="budget-summary-item highlight"><span class="budget-summary-label">Programs Available</span><span class="budget-summary-value ${progAvailCls}">${fmtWhole(progAvailable)}</span></div>`;
+    // Row 1: Programs waterfall
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">Programs Budget</span><span class="budget-summary-value">${fmtWhole(CONFIG.BUDGET.programs)}</span></div>`;
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">Spent + Outstanding</span><span class="budget-summary-value">${fmtWhole(progActualAndOutstanding)}</span></div>`;
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">Committed</span><span class="budget-summary-value">${fmtWhole(progCommitted)}</span></div>`;
+    html += `<div class="budget-summary-item highlight"><span class="budget-summary-label">Available</span><span class="budget-summary-value ${progAvailCls}">${fmtWhole(progAvailable)}</span></div>`;
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">T&E Budget / Spent</span><span class="budget-summary-value">${fmtWhole(CONFIG.BUDGET.te)} / ${fmtWhole(teActual)}</span></div>`;
     html += '</div>';
     return html;
 }
