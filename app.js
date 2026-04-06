@@ -24,8 +24,6 @@ const CONFIG = {
         '6104': { cat: 'Headcount', sub: 'Benefits' },
         '6105': { cat: 'Headcount', sub: 'Commissions' },
         '6202': { cat: 'T&E', sub: 'Lodging' },
-        '6303': { cat: 'Outside Envelope', sub: 'Software Subscriptions' },
-        '6309': { cat: 'Outside Envelope', sub: 'Prepaid' },
         '6402': { cat: 'Programs', sub: 'Consulting' },
         '6405': { cat: 'Programs', sub: 'Conferences/Events' },
         '6406': { cat: 'Programs', sub: 'Advertising' }
@@ -34,7 +32,6 @@ const CONFIG = {
         'Programs': ['Events', 'Mktg Ops', 'Advertising', 'Webinars', 'Consulting', 'Conferences/Events'],
         'T&E': ['Lodging', 'Meals', 'Travel'],
         'Headcount': ['Salary', 'Payroll Tax', 'Benefits', 'Bonus', 'Commissions'],
-        'Outside Envelope': ['Software Subscriptions', 'Prepaid']
     }
 };
 
@@ -341,7 +338,7 @@ function parseTransactions(rows) {
         category: r[7] || '', subcategory: r[8] || '', month: r[9] || '', quarter: r[10] || '',
         year: parseInt(r[11]) || 2026, status: r[12] || 'Actual',
         isCarryover: (r[13] || '').toLowerCase() === 'yes', employeeType: r[14] || ''
-    })).filter(t => (t.amount !== 0 || t.vendor) && t.year >= 2026);
+    })).filter(t => (t.amount !== 0 || t.vendor) && t.year >= 2026 && t.category !== 'Outside Envelope');
 }
 function parseBudget(rows) {
     if (!rows || rows.length < 2) return;
@@ -450,35 +447,11 @@ function loadFallbackData() {
         txn('03/31/2026', 'Commissions', 1565.77, '6105', 'Commissions', '400-Marketing', 'Commissions', 'Headcount', 'Commissions', 'Mar', 'Q1', 2026),
     ];
 
-    // --- Q1 2026 Outside Envelope ($66,751.39) ---
-    const q1_outside = [
-        // SW Amortization — GL 6303 ($33,411.29)
-        txn('01/31/2026', 'Salesforce', 2915.00, '6303', 'Software Subscriptions', '403-Mktg Ops', 'CRM amortization', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Salesforce', 2915.00, '6303', 'Software Subscriptions', '403-Mktg Ops', 'CRM amortization', 'Outside Envelope', 'Software Subscriptions', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Salesforce', 2915.00, '6303', 'Software Subscriptions', '403-Mktg Ops', 'CRM amortization', 'Outside Envelope', 'Software Subscriptions', 'Mar', 'Q1', 2026),
-        txn('01/31/2026', 'Outreach/LinkedIn Nav', 1828.67, '6303', 'Software Subscriptions', '403-Mktg Ops', 'SW amortization', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Outreach/LinkedIn Nav', 1828.67, '6303', 'Software Subscriptions', '403-Mktg Ops', 'SW amortization', 'Outside Envelope', 'Software Subscriptions', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Outreach/LinkedIn Nav', 1828.66, '6303', 'Software Subscriptions', '403-Mktg Ops', 'SW amortization', 'Outside Envelope', 'Software Subscriptions', 'Mar', 'Q1', 2026),
-        txn('01/31/2026', 'HubSpot', 929.01, '6303', 'Software Subscriptions', '403-Mktg Ops', 'Marketing Hub amortization', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'HubSpot', 929.01, '6303', 'Software Subscriptions', '403-Mktg Ops', 'Marketing Hub amortization', 'Outside Envelope', 'Software Subscriptions', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'HubSpot', 929.00, '6303', 'Software Subscriptions', '403-Mktg Ops', 'Marketing Hub amortization', 'Outside Envelope', 'Software Subscriptions', 'Mar', 'Q1', 2026),
-        txn('01/31/2026', 'ZoomInfo', 844.67, '6303', 'Software Subscriptions', '403-Mktg Ops', 'Data amortization', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'ZoomInfo', 844.67, '6303', 'Software Subscriptions', '403-Mktg Ops', 'Data amortization', 'Outside Envelope', 'Software Subscriptions', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'ZoomInfo', 844.66, '6303', 'Software Subscriptions', '403-Mktg Ops', 'Data amortization', 'Outside Envelope', 'Software Subscriptions', 'Mar', 'Q1', 2026),
-        txn('01/31/2026', 'Other SW', 4619.76, '6303', 'Software Subscriptions', '400-Marketing', 'Misc SW amortization', 'Outside Envelope', 'Software Subscriptions', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Other SW', 4619.76, '6303', 'Software Subscriptions', '400-Marketing', 'Misc SW amortization', 'Outside Envelope', 'Software Subscriptions', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Other SW', 4619.77, '6303', 'Software Subscriptions', '400-Marketing', 'Misc SW amortization', 'Outside Envelope', 'Software Subscriptions', 'Mar', 'Q1', 2026),
-        // Prepaid — GL 6309 ($33,340.10)
-        txn('01/15/2026', 'ZoomInfo', 20000, '6309', 'Prepaid', '403-Mktg Ops', 'Annual prepaid', 'Outside Envelope', 'Prepaid', 'Jan', 'Q1', 2026),
-        txn('01/15/2026', 'HubSpot', 13340.10, '6309', 'Prepaid', '403-Mktg Ops', 'Annual prepaid', 'Outside Envelope', 'Prepaid', 'Jan', 'Q1', 2026),
-    ];
-
-    appState.transactions = [...q1_programs, ...q1_te, ...q1_headcount, ...q1_outside];
+    appState.transactions = [...q1_programs, ...q1_te, ...q1_headcount];
     appState.budget = [
         { category: 'Headcount', annual: 336914, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 28076.17; return o; }, {}) },
         { category: 'Programs', annual: 90000, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 7500; return o; }, {}) },
         { category: 'T&E', annual: 20000, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 1666.67; return o; }, {}) },
-        { category: 'Outside Envelope', annual: 0, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 0; return o; }, {}) },
         { category: 'TOTAL', annual: 446914, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 37166.67; return o; }, {}) },
     ];
     // REFERENCE tab — real vendor contract data ($392,580 before → $178,957 after = $213,623 savings)
@@ -605,12 +578,11 @@ function recompute() {
     const curMonthIdx = getCurrentMonthIdx();
     const actuals = tx2026.filter(t => t.status === 'Actual');
     const c = appState.computed;
-    c.ytdActual = { total: 0, headcount: 0, programs: 0, te: 0, outside: 0 };
+    c.ytdActual = { total: 0, headcount: 0, programs: 0, te: 0 };
     actuals.forEach(t => {
         if (t.category === 'Headcount') c.ytdActual.headcount += t.amount;
         else if (t.category === 'Programs') c.ytdActual.programs += t.amount;
         else if (t.category === 'T&E') c.ytdActual.te += t.amount;
-        else if (t.category === 'Outside Envelope') c.ytdActual.outside += t.amount;
     });
     c.ytdActual.total = c.ytdActual.headcount + c.ytdActual.programs + c.ytdActual.te;
     const outstanding = tx2026.filter(t => t.status === 'Outstanding');
@@ -663,12 +635,13 @@ function recompute() {
 
     // Per-month actuals
     c.byMonth = {};
-    CONFIG.MONTHS.forEach(m => { c.byMonth[m] = { headcount: 0, programs: 0, te: 0, outside: 0, total: 0 }; });
+    CONFIG.MONTHS.forEach(m => { c.byMonth[m] = { headcount: 0, programs: 0, te: 0, total: 0 }; });
     tx2026.forEach(t => {
         if (!c.byMonth[t.month]) return;
-        const cat = t.category === 'Headcount' ? 'headcount' : t.category === 'Programs' ? 'programs' : t.category === 'T&E' ? 'te' : 'outside';
+        if (t.category === 'Outside Envelope') return;
+        const cat = t.category === 'Headcount' ? 'headcount' : t.category === 'Programs' ? 'programs' : 'te';
         c.byMonth[t.month][cat] += t.amount;
-        if (cat !== 'outside') c.byMonth[t.month].total += t.amount;
+        c.byMonth[t.month].total += t.amount;
     });
 
     // Aggregate indexes
@@ -886,7 +859,7 @@ function startCellEdit(td, rowId, field, collection) {
     } else if (field === 'category') {
         input = document.createElement('select');
         input.className = 'cell-editor';
-        ['Headcount', 'Programs', 'T&E', 'Outside Envelope'].forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; if (rawValue === v) o.selected = true; input.appendChild(o); });
+        ['Headcount', 'Programs', 'T&E'].forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = v; if (rawValue === v) o.selected = true; input.appendChild(o); });
     } else if (field === 'gl') {
         input = document.createElement('select');
         input.className = 'cell-editor';
@@ -1046,7 +1019,6 @@ function renderDashboard() {
     // Assumptions panel — structured notes (matches mockup)
     html += '<div class="section-card"><details class="assumptions-panel" open><summary>Budget Assumptions &amp; Notes</summary><div class="assumptions-notes">';
     html += '<div class="assumption-note"><span class="assumption-label">Headcount basis</span><span class="assumption-detail">$336K budget is salary-only. Q1 actual includes tax, benefits, bonus, commissions</span></div>';
-    html += '<div class="assumption-note"><span class="assumption-label">Outside Envelope</span><span class="assumption-detail">' + fmtWhole(c.ytdActual.outside) + ' in SW subscriptions sits in GL 6303, not in the $446K marketing budget</span></div>';
     html += '<div class="assumption-note"><span class="assumption-label">Sponge Software</span><span class="assumption-detail">Terminated after Q1. $15,400 in Q1 was final spend. $0 from Q2 forward.</span></div>';
     html += '<div class="assumption-note"><span class="assumption-label">Kate Bertram</span><span class="assumption-detail">PT Contractor — no fully-loaded cost multiplier applied</span></div>';
     html += '<div class="assumption-note"><span class="assumption-label">T&E overpace</span><span class="assumption-detail">Ed Miller conference lodging (' + fmtWhole(c.ytdActual.te) + ') is a one-time Q1 event, not a recurring run rate</span></div>';
@@ -1406,8 +1378,8 @@ function renderQuarterlyDetail() {
 
     // 3. Define category order (respecting audience)
     const cats = showHC
-        ? ['Programs', 'T&E', 'Headcount', 'Outside Envelope']
-        : ['Programs', 'T&E', 'Outside Envelope'];
+        ? ['Programs', 'T&E', 'Headcount']
+        : ['Programs', 'T&E'];
 
     // 4. Build toolbar + summary bar
     let html = renderBudgetToolbar(q);
@@ -1444,7 +1416,7 @@ function renderQuarterlyDetail() {
         const budgetRow = appState.budget.find(b => b.category === cat);
         const quarterBudget = budgetRow ? getQuarterBudget(budgetRow, q) : 0;
         const isCollapsed = appState.budgetCollapsed[cat];
-        const inGrandTotal = (cat !== 'Outside Envelope');
+        const inGrandTotal = true;
 
         // Category header row — keyboard accessible with tabindex
         const toggleIcon = isCollapsed ? '&#9654;' : '&#9660;';
@@ -1599,14 +1571,14 @@ function toggleBudgetCategory(cat) {
 }
 function budgetExpandAll() { appState.budgetCollapsed = {}; renderCalendar(); }
 function budgetCollapseAll() {
-    ['Programs', 'T&E', 'Headcount', 'Outside Envelope'].forEach(c => { appState.budgetCollapsed[c] = true; });
+    ['Programs', 'T&E', 'Headcount'].forEach(c => { appState.budgetCollapsed[c] = true; });
     renderCalendar();
 }
 
 function renderMonthlySpreadsheet() {
     const tx = getFilteredTransactions();
     const showHC = isHeadcountVisible();
-    const cats = showHC ? ['Programs', 'T&E', 'Headcount', 'Outside Envelope'] : ['Programs', 'T&E', 'Outside Envelope'];
+    const cats = showHC ? ['Programs', 'T&E', 'Headcount'] : ['Programs', 'T&E'];
     const isPres = appState.presentationMode;
     const curMonthIdx = getCurrentMonthIdx();
     const MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -1887,7 +1859,7 @@ function renderCalendarMonthly() {
     const m = appState.calendarMonth;
     const tx = getFilteredTransactions().filter(t => t.year === 2026 && t.month === m);
     const showHC = isHeadcountVisible();
-    const cats = showHC ? ['Headcount', 'Programs', 'T&E', 'Outside Envelope'] : ['Programs', 'T&E', 'Outside Envelope'];
+    const cats = showHC ? ['Headcount', 'Programs', 'T&E'] : ['Programs', 'T&E'];
     const isPres = appState.presentationMode;
 
     let html = '<div class="zoom-bar"><button class="zoom-btn" onclick="calZoomTo(\'spreadsheet\')">&larr; Back to Budget</button><span style="font-size:12px;font-weight:600">' + esc(m) + ' 2026 — Transaction Detail</span></div>';
@@ -1927,7 +1899,7 @@ function calZoomTo(level, target) {
 }
 function calToggleCategory(cat) { appState.calendarCollapsed[cat] = !appState.calendarCollapsed[cat]; renderCalendar(); }
 function calExpandAll() { appState.calendarCollapsed = {}; renderCalendar(); }
-function calCollapseAll() { ['Headcount', 'Programs', 'T&E', 'Outside Envelope'].forEach(c => appState.calendarCollapsed[c] = true); renderCalendar(); }
+function calCollapseAll() { ['Headcount', 'Programs', 'T&E'].forEach(c => appState.calendarCollapsed[c] = true); renderCalendar(); }
 function toggleVendor(vendor) {
     appState.disabledVendors[vendor] = !appState.disabledVendors[vendor];
     const vm = appState.vendorMonthly.find(v => v.vendor === vendor);
@@ -2120,7 +2092,7 @@ function renderExpenses() {
     });
     html += '</div>';
     html += `<input type="text" class="filter-input" placeholder="Search vendor, memo, GL..." value="${esc(f.search)}" oninput="updateTxFilter('search', this.value)">`;
-    html += `<select class="filter-select" onchange="updateTxFilter('category', this.value)"><option value="">All Categories</option>${showHC ? '<option value="Headcount"' + (f.category === 'Headcount' ? ' selected' : '') + '>Headcount</option>' : ''}<option value="Programs" ${f.category === 'Programs' ? 'selected' : ''}>Programs</option><option value="T&E" ${f.category === 'T&E' ? 'selected' : ''}>T&E</option><option value="Outside Envelope" ${f.category === 'Outside Envelope' ? 'selected' : ''}>Outside Envelope</option></select>`;
+    html += `<select class="filter-select" onchange="updateTxFilter('category', this.value)"><option value="">All Categories</option>${showHC ? '<option value="Headcount"' + (f.category === 'Headcount' ? ' selected' : '') + '>Headcount</option>' : ''}<option value="Programs" ${f.category === 'Programs' ? 'selected' : ''}>Programs</option><option value="T&E" ${f.category === 'T&E' ? 'selected' : ''}>T&E</option></select>`;
     html += `<select class="filter-select" onchange="updateTxFilter('status', this.value)"><option value="">All Status</option><option value="Actual" ${f.status === 'Actual' ? 'selected' : ''}>Actual</option><option value="Outstanding" ${f.status === 'Outstanding' ? 'selected' : ''}>Outstanding</option></select>`;
     html += `<button class="filter-clear" onclick="clearTxFilters()">Clear</button>`;
     html += '<div style="margin-left:auto;display:flex;gap:6px">';
@@ -2151,7 +2123,7 @@ function renderExpenses() {
     const sortIcon = col => appState.txSort.col !== col ? '<span class="sort-indicator">↕</span>' : '<span class="sort-indicator">' + (appState.txSort.dir === 'asc' ? '↑' : '↓') + '</span>';
     const sortCls = col => appState.txSort.col !== col ? 'sortable' : 'sortable sort-' + appState.txSort.dir;
     html += `<thead><tr><th class="${sortCls('date')}" onclick="sortTx('date')">Date ${sortIcon('date')}</th><th class="${sortCls('vendor')}" onclick="sortTx('vendor')">Vendor ${sortIcon('vendor')}</th><th class="num ${sortCls('amount')}" onclick="sortTx('amount')">Amount ${sortIcon('amount')}</th><th class="${sortCls('category')}" onclick="sortTx('category')">Category ${sortIcon('category')}</th><th>Sub</th><th>GL</th><th>Dept</th><th>Memo</th><th>Status</th></tr></thead><tbody>`;
-    const catOrder = showHC ? ['Headcount', 'Programs', 'T&E', 'Outside Envelope'] : ['Programs', 'T&E', 'Outside Envelope'];
+    const catOrder = showHC ? ['Headcount', 'Programs', 'T&E'] : ['Programs', 'T&E'];
     // Group by category then subcategory
     const grouped = {};
     filtered.forEach(t => {
@@ -2224,7 +2196,7 @@ function toggleExpCategory(key) { appState.expCollapsed[key] = !appState.expColl
 function expExpandAll() { appState.expCollapsed = {}; renderExpenses(); }
 function expCollapseAll() {
     const showHC = isHeadcountVisible();
-    const cats = showHC ? ['Headcount', 'Programs', 'T&E', 'Outside Envelope'] : ['Programs', 'T&E', 'Outside Envelope'];
+    const cats = showHC ? ['Headcount', 'Programs', 'T&E'] : ['Programs', 'T&E'];
     cats.forEach(c => { appState.expCollapsed[c] = true; });
     renderExpenses();
 }
