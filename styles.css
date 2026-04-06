@@ -508,8 +508,6 @@ tr.editing-row { background: rgba(71,57,231,0.03) !important; }
 .calendar-table .bgt { color: var(--text-muted); font-weight: 400; background: rgba(0,0,0,0.015); }
 .calendar-table .act { color: var(--text-color); font-weight: 600; }
 .calendar-table .ann-col { background: rgba(10,24,73,0.03); font-weight: 600; }
-/* Q4'25 reference columns */
-.calendar-table .q4-ref { background: rgba(0,0,0,0.02); }
 
 /* Clickable quarter/month headers for zoom */
 .cal-zoom-header { cursor: pointer; }

@@ -79,7 +79,7 @@ const appState = {
     calendarMonth: null,
     calendarCollapsed: {},
     // v6: Quarterly detail view
-    budgetQuarter: null, // auto-detected; 'Q4_2025','Q1','Q2','Q3','Q4','YTD','FULL'
+    budgetQuarter: null, // auto-detected; 'Q1','Q2','Q3','Q4','YTD','FULL'
     budgetView: 'quarterly', // 'quarterly' or 'monthly'
     budgetCollapsed: {},
     // v4: Budget modeling
@@ -384,31 +384,6 @@ function loadFallbackData() {
     let _fbRowId = 1000;
     const txn = (date, vendor, amount, gl, glName, dept, memo, cat, sub, month, qtr, year, status, carry, empType) =>
         ({ _row: _fbRowId++, date, vendor, amount, gl, glName, department: dept, memo, category: cat, subcategory: sub, month, quarter: qtr, year, status: status || 'Actual', isCarryover: carry || false, employeeType: empType || '' });
-    // --- Q4 2025 Reference Data (carryover context, $87,778 Programs) ---
-    const q4_2025 = [
-        // Sponge ($19,500)
-        txn('10/15/2025', 'Sponge Software', 6500, '6402', 'Consulting', '407-Mktg Leadership', 'Monthly retainer', 'Programs', 'Consulting', 'Oct', 'Q4', 2025, 'Actual', true),
-        txn('11/15/2025', 'Sponge Software', 6500, '6402', 'Consulting', '407-Mktg Leadership', 'Monthly retainer', 'Programs', 'Consulting', 'Nov', 'Q4', 2025, 'Actual', true),
-        txn('12/15/2025', 'Sponge Software', 6500, '6402', 'Consulting', '407-Mktg Leadership', 'Monthly retainer', 'Programs', 'Consulting', 'Dec', 'Q4', 2025, 'Actual', true),
-        // Advertising ($5,750)
-        txn('10/20/2025', 'LinkedIn Ads', 950, '6406', 'Advertising', '402-Corp Marketing', 'Digital ads', 'Programs', 'Advertising', 'Oct', 'Q4', 2025),
-        txn('11/20/2025', 'LinkedIn Ads', 950, '6406', 'Advertising', '402-Corp Marketing', 'Digital ads', 'Programs', 'Advertising', 'Nov', 'Q4', 2025),
-        txn('12/20/2025', 'LinkedIn Ads', 950, '6406', 'Advertising', '402-Corp Marketing', 'Digital ads', 'Programs', 'Advertising', 'Dec', 'Q4', 2025),
-        txn('10/20/2025', 'Google Ads', 850, '6406', 'Advertising', '402-Corp Marketing', 'Search ads', 'Programs', 'Advertising', 'Oct', 'Q4', 2025),
-        txn('11/20/2025', 'Google Ads', 850, '6406', 'Advertising', '402-Corp Marketing', 'Search ads', 'Programs', 'Advertising', 'Nov', 'Q4', 2025),
-        txn('12/20/2025', 'Google Ads', 850, '6406', 'Advertising', '402-Corp Marketing', 'Search ads', 'Programs', 'Advertising', 'Dec', 'Q4', 2025),
-        txn('11/20/2025', 'Paperclip Promotions', 150, '6406', 'Advertising', '405-Community & Advocacy', 'Promo items', 'Programs', 'Advertising', 'Nov', 'Q4', 2025),
-        txn('12/20/2025', 'Paperclip Promotions', 200, '6406', 'Advertising', '405-Community & Advocacy', 'Promo items', 'Programs', 'Advertising', 'Dec', 'Q4', 2025),
-        // Events ($62,528)
-        txn('11/20/2025', 'Paperclip Promotions', 300, '6405', 'Conferences/Events', '405-Community & Advocacy', 'Event materials', 'Programs', 'Conferences/Events', 'Nov', 'Q4', 2025),
-        txn('12/20/2025', 'Paperclip Promotions', 300, '6405', 'Conferences/Events', '405-Community & Advocacy', 'Event materials', 'Programs', 'Conferences/Events', 'Dec', 'Q4', 2025),
-        txn('10/25/2025', 'Docebo Conference', 5200, '6405', 'Conferences/Events', '401-Education Marketing', 'Annual conference', 'Programs', 'Conferences/Events', 'Oct', 'Q4', 2025, 'Actual', true),
-        txn('10/01/2025', 'Training Magazine', 12000, '6405', 'Conferences/Events', '402-Corp Marketing', 'TM Conference', 'Programs', 'Conferences/Events', 'Oct', 'Q4', 2025, 'Actual', true),
-        txn('11/05/2025', 'Docebo RKO', 9328, '6405', 'Conferences/Events', '401-Education Marketing', 'Sponsorship', 'Programs', 'Conferences/Events', 'Nov', 'Q4', 2025, 'Actual', true),
-        txn('12/10/2025', 'Docebo RKO', 26500, '6405', 'Conferences/Events', '401-Education Marketing', 'Sponsorship', 'Programs', 'Conferences/Events', 'Dec', 'Q4', 2025, 'Actual', true),
-        txn('12/18/2025', 'Training Magazine', 8900, '6405', 'Conferences/Events', '402-Corp Marketing', 'TM Webinar', 'Programs', 'Conferences/Events', 'Dec', 'Q4', 2025, 'Actual', true),
-    ];
-
     // --- Q1 2026 Programs ($23,230.11 from NetSuite DETAIL tab) ---
     const q1_programs = [
         // Sponge Software ($15,400) — GL 6402, dept 407-Mktg Leadership
@@ -497,7 +472,7 @@ function loadFallbackData() {
         txn('01/15/2026', 'HubSpot', 13340.10, '6309', 'Prepaid', '403-Mktg Ops', 'Annual prepaid', 'Outside Envelope', 'Prepaid', 'Jan', 'Q1', 2026),
     ];
 
-    appState.transactions = [...q4_2025, ...q1_programs, ...q1_te, ...q1_headcount, ...q1_outside];
+    appState.transactions = [...q1_programs, ...q1_te, ...q1_headcount, ...q1_outside];
     appState.budget = [
         { category: 'Headcount', annual: 336914, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 28076.17; return o; }, {}) },
         { category: 'Programs', annual: 90000, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 7500; return o; }, {}) },
@@ -528,79 +503,62 @@ function loadFallbackData() {
     appState.vendorMonthly = [
         // ── Programs — Advertising (recurring) ──
         { vendor: 'LinkedIn Ads', subcategory: 'Advertising', category: 'Programs',
-          oct25: 950, nov25: 950, dec25: 950,
           jan: 950, feb: 950, mar: 950, apr: 950, may: 950, jun: 950,
           jul: 950, aug: 950, sep: 950, oct: 950, nov: 950, dec: 950, notes: '' },
         { vendor: 'Google Ads', subcategory: 'Advertising', category: 'Programs',
-          oct25: 850, nov25: 850, dec25: 850,
           jan: 850, feb: 850, mar: 850, apr: 850, may: 850, jun: 850,
           jul: 850, aug: 850, sep: 850, oct: 850, nov: 850, dec: 850, notes: '' },
         // ── Programs — Events (recurring materials) ──
         { vendor: 'Paperclip Promotions', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 450, dec25: 500,
           jan: 300, feb: 300, mar: 300, apr: 300, may: 300, jun: 300,
           jul: 300, aug: 300, sep: 300, oct: 300, nov: 300, dec: 300, notes: 'Event materials ~$300/mo' },
         { vendor: 'American Express', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Events via AmEx card' },
         // ── Programs — Events (Q2 confirmed) — from PPTX + Excel TOTALS ──
         { vendor: 'Docebo Inspire', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 25000, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Apr 20-22, Miami. $250 actual so far' },
         { vendor: 'ATD Conference', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 9000, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'May 17-20, Los Angeles. Confirmed' },
         { vendor: 'Bb Durham TLC', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 1800, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL. Budget $1,800' },
         { vendor: 'Class Day Spain', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 2000,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL reseller event (eLearnia)' },
         { vendor: 'Class Day Germany', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 2000,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL reseller event' },
         // ── Programs — Events (Q2 draft / on hold) ──
         { vendor: 'Class Day Nairobi', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 1500, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft — On Hold as of 11/3', isDraft: true },
         // ── Programs — Events (Q3) ──
         { vendor: 'Class Day Italy', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 1500, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL reseller event' },
         { vendor: 'Bb Together User Conference', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 1000, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'BD. TBC costs w/ Russell' },
         { vendor: 'Class Day Dubai', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 2000, oct: 0, nov: 0, dec: 0, notes: 'Draft — may not take place', isDraft: true },
         // ── Programs — Events (Q4) ──
         { vendor: 'DevLearn', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 12000, nov: 0, dec: 0, notes: 'Corp. Budget $12,000' },
         // ── Programs — Mktg Ops ──
         { vendor: 'Sponge Software', subcategory: 'Mktg Ops', category: 'Programs',
-          oct25: 6500, nov25: 6500, dec25: 6500,
           jan: 0, feb: 7700, mar: 7700, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Terminated after Q1' },
         // ── Programs — Webinars ──
         { vendor: 'TM Sponsored Webinar', subcategory: 'Webinars', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 9000, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Training Magazine — confirmed Q2, $9K' },
         // ── T&E ──
         { vendor: 'Ed Miller', subcategory: 'Lodging', category: 'T&E',
-          oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Conference lodging' },
     ];
@@ -1195,7 +1153,6 @@ function getDefaultQuarter() {
 
 // Get quarter months for a given quarter code
 function getQuarterMonths(q) {
-    if (q === 'Q4_2025') return { months: ['Oct', 'Nov', 'Dec'], year: 2025 };
     if (q === 'Q1') return { months: ['Jan', 'Feb', 'Mar'], year: 2026 };
     if (q === 'Q2') return { months: ['Apr', 'May', 'Jun'], year: 2026 };
     if (q === 'Q3') return { months: ['Jul', 'Aug', 'Sep'], year: 2026 };
@@ -1205,7 +1162,6 @@ function getQuarterMonths(q) {
 
 // Filter transactions for a given quarter selection
 function filterByQuarter(tx, q) {
-    if (q === 'Q4_2025') return tx.filter(t => t.year === 2025 && t.quarter === 'Q4');
     if (q === 'YTD') return tx.filter(t => t.year === 2026 && monthIdx(t.month) <= getCurrentMonthIdx());
     if (q === 'FULL') return tx.filter(t => t.year === 2026);
     return tx.filter(t => t.year === 2026 && t.quarter === q);
@@ -1259,7 +1215,6 @@ function getPlannedItemsForQuarter(q) {
 // Get quarterly budget from budget row
 function getQuarterBudget(budgetRow, q) {
     if (!budgetRow || !budgetRow.months) return 0;
-    if (q === 'Q4_2025') return 0;
     if (q === 'FULL') return budgetRow.annual;
     if (q === 'YTD') {
         const curIdx = getCurrentMonthIdx();
@@ -1334,7 +1289,6 @@ function isQuarterFuture(q) {
 
 // Quarter label for display
 function quarterLabel(q) {
-    if (q === 'Q4_2025') return "Q4 '25";
     if (q === 'YTD') return 'Year to Date';
     if (q === 'FULL') return 'Full Year 2026';
     return q + ' 2026';
@@ -1344,7 +1298,7 @@ function quarterLabel(q) {
 function quarterHasData(q) {
     const filtered = filterByQuarter(appState.transactions, q);
     if (filtered.length > 0) return true;
-    if (q !== 'Q4_2025' && q !== 'YTD' && q !== 'FULL') {
+    if (q !== 'YTD' && q !== 'FULL') {
         return getPlannedItemsForQuarter(q).length > 0;
     }
     return false;
@@ -1374,7 +1328,7 @@ function renderQuarterlyDetail() {
     const filtered = filterByQuarter(allTx, q);
 
     // 2. Get planned items for future quarters
-    const planned = (q !== 'Q4_2025' && q !== 'YTD') ? getPlannedItemsForQuarter(q) : [];
+    const planned = (q !== 'YTD') ? getPlannedItemsForQuarter(q) : [];
 
     // 3. Define category order (respecting audience)
     const cats = showHC
@@ -1494,7 +1448,7 @@ function renderBudgetToolbar(q) {
     html += `<button class="view-btn ${appState.budgetView === 'quarterly' ? 'active' : ''}" onclick="switchBudgetView('quarterly')">Quarterly Detail</button>`;
     html += `<button class="view-btn ${appState.budgetView === 'monthly' ? 'active' : ''}" onclick="switchBudgetView('monthly')">Monthly Summary</button>`;
     html += '</div>';
-    // Quarter selector — Q1-Q4 are primary, Q4'25 is de-emphasized reference
+    // Quarter selector
     html += '<div class="quarter-selector">';
     ['Q1', 'Q2', 'Q3', 'Q4'].forEach(qk => {
         const hasData = quarterHasData(qk);
@@ -1503,8 +1457,6 @@ function renderBudgetToolbar(q) {
     html += '<span class="quarter-sep">|</span>';
     html += `<button class="quarter-btn ${q === 'YTD' ? 'active' : ''}" onclick="selectBudgetQuarter('YTD')">YTD</button>`;
     html += `<button class="quarter-btn ${q === 'FULL' ? 'active' : ''}" onclick="selectBudgetQuarter('FULL')">Full Year</button>`;
-    html += '<span class="quarter-sep">|</span>';
-    html += `<button class="quarter-btn ${q === 'Q4_2025' ? 'active' : ''}" onclick="selectBudgetQuarter('Q4_2025')" style="font-size:9px;opacity:0.6">Q4 '25</button>`;
     html += '</div>';
     // Expand/Collapse
     html += '<div style="display:flex;gap:6px;margin-left:auto">';
@@ -1570,20 +1522,12 @@ function renderMonthlySpreadsheet() {
     const isPres = appState.presentationMode;
     const curMonthIdx = getCurrentMonthIdx();
     const MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const Q4_KEYS = ['oct25','nov25','dec25'];
-    const Q4_LABELS = ["Oct'25","Nov'25","Dec'25"];
     const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const tx2026 = tx.filter(t => t.year === 2026);
-    const q4tx = tx.filter(t => t.year === 2025 && t.quarter === 'Q4');
 
     // Helper: sum actual transactions for a vendor in a given month (2026)
     function actualForVendorMonth(vendorName, monthLabel) {
         return tx2026.filter(t => matchVendor(vendorName, t.vendor) && t.month === monthLabel).reduce((s, t) => s + t.amount, 0);
-    }
-    // Helper: sum Q4'25 transactions for a vendor in a given Q4 month
-    function q4ForVendorMonth(vendorName, q4Month) {
-        const monthMap = { oct25: 'Oct', nov25: 'Nov', dec25: 'Dec' };
-        return q4tx.filter(t => matchVendor(vendorName, t.vendor) && t.month === monthMap[q4Month]).reduce((s, t) => s + t.amount, 0);
     }
 
     // Shared budget toolbar (view toggle + quarter selector)
@@ -1600,11 +1544,6 @@ function renderMonthlySpreadsheet() {
     html += '<div class="calendar-container"><table class="calendar-table"><thead><tr>';
     html += '<th class="row-label sticky-col-toggle" style="min-width:28px"></th>';
     html += '<th class="row-label sticky-col-name">Category / Vendor</th>';
-    // Q4'25 columns (muted)
-    Q4_LABELS.forEach((lbl, i) => {
-        const sepCls = i === 0 ? 'q-sep' : '';
-        html += `<th class="num cell q4-ref ${sepCls}" style="opacity:0.5;font-size:10px">${lbl}</th>`;
-    });
     // 2026 month columns
     MONTH_LABELS.forEach((lbl, mi) => {
         const isCur = mi === curMonthIdx;
@@ -1648,12 +1587,6 @@ function renderMonthlySpreadsheet() {
         // Category header row
         html += `<tr class="category-row"><td class="row-label-cell sticky-col-toggle"></td>`;
         html += `<td class="row-label-cell sticky-col-name"><span class="cal-category-toggle ${isCollapsed ? 'collapsed' : ''}" onclick="calToggleCategory('${esc(cat)}')">${esc(cat)}</span></td>`;
-        // Q4'25 totals
-        Q4_KEYS.forEach((qk, qi) => {
-            const monthMap = { oct25: 'Oct', nov25: 'Nov', dec25: 'Dec' };
-            const q4Val = q4tx.filter(t => t.category === cat && t.month === monthMap[qk]).reduce((s, t) => s + t.amount, 0);
-            html += `<td class="num cell q4-ref ${qi === 0 ? 'q-sep' : ''}" style="opacity:0.5">${q4Val ? fmtWhole(q4Val) : ''}</td>`;
-        });
         // 2026 months
         catMonthTotals.forEach((val, mi) => {
             const isPast = mi <= curMonthIdx;
@@ -1686,11 +1619,6 @@ function renderMonthlySpreadsheet() {
                 // Subcategory header
                 let subAnnual = 0;
                 html += `<tr class="subcategory-row"><td class="sticky-col-toggle"></td><td class="row-label-cell sticky-col-name">${esc(sub)}</td>`;
-                Q4_KEYS.forEach((qk, qi) => {
-                    const monthMap = { oct25: 'Oct', nov25: 'Nov', dec25: 'Dec' };
-                    const q4Val = vendors.reduce((s, vm) => s + q4ForVendorMonth(vm.vendor, qk), 0);
-                    html += `<td class="num cell q4-ref ${qi === 0 ? 'q-sep' : ''}" style="opacity:0.4">${q4Val ? fmtWhole(q4Val) : ''}</td>`;
-                });
                 MONTH_KEYS.forEach((mk, mi) => {
                     const monthLabel = MONTH_LABELS[mi];
                     const isPast = mi <= curMonthIdx;
@@ -1707,7 +1635,7 @@ function renderMonthlySpreadsheet() {
 
                 // Vendor rows
                 vendors.forEach(vm => {
-                    html += renderVendorMonthlyRow(vm, catTx, q4tx, curMonthIdx, isPres);
+                    html += renderVendorMonthlyRow(vm, catTx, curMonthIdx, isPres);
                 });
             });
 
@@ -1720,7 +1648,6 @@ function renderMonthlySpreadsheet() {
                 Object.entries(uVendors).sort(([a], [b]) => a.localeCompare(b)).forEach(([vendor, vtx]) => {
                     let vAnnual = 0;
                     html += `<tr class="vendor-row"><td class="sticky-col-toggle"></td><td class="row-label-cell sticky-col-name" style="padding-left:34px">${esc(vendor)}</td>`;
-                    Q4_KEYS.forEach((qk, qi) => html += `<td class="num cell q4-ref ${qi === 0 ? 'q-sep' : ''}" style="opacity:0.4"></td>`);
                     MONTH_KEYS.forEach((mk, mi) => {
                         const mLabel = MONTH_LABELS[mi];
                         const val = vtx.filter(t => t.month === mLabel).reduce((s, t) => s + t.amount, 0);
@@ -1739,7 +1666,7 @@ function renderMonthlySpreadsheet() {
         } else if (cat === 'T&E') {
             // T&E vendor rows from vendorMonthly
             catVMs.forEach(vm => {
-                html += renderVendorMonthlyRow(vm, catTx, q4tx, curMonthIdx, isPres);
+                html += renderVendorMonthlyRow(vm, catTx, curMonthIdx, isPres);
             });
             // Unmatched T&E vendors
             const matchedVendors = catVMs.map(vm => vm.vendor);
@@ -1750,7 +1677,6 @@ function renderMonthlySpreadsheet() {
                 Object.entries(uVendors).sort(([a], [b]) => a.localeCompare(b)).forEach(([vendor, vtx]) => {
                     let vAnnual = 0;
                     html += `<tr class="vendor-row"><td class="sticky-col-toggle"></td><td class="row-label-cell sticky-col-name" style="padding-left:18px">${esc(vendor)}</td>`;
-                    Q4_KEYS.forEach((qk, qi) => html += `<td class="num cell q4-ref ${qi === 0 ? 'q-sep' : ''}" style="opacity:0.4"></td>`);
                     MONTH_KEYS.forEach((mk, mi) => {
                         const mLabel = MONTH_LABELS[mi];
                         const val = vtx.filter(t => t.month === mLabel).reduce((s, t) => s + t.amount, 0);
@@ -1771,11 +1697,6 @@ function renderMonthlySpreadsheet() {
             Object.entries(vendors).sort(([a], [b]) => a.localeCompare(b)).forEach(([vendor, vtx]) => {
                 let vAnnual = 0;
                 html += `<tr class="vendor-row"><td class="sticky-col-toggle"></td><td class="row-label-cell sticky-col-name" style="padding-left:18px">${esc(vendor)}</td>`;
-                Q4_KEYS.forEach((qk, qi) => {
-                    const monthMap = { oct25: 'Oct', nov25: 'Nov', dec25: 'Dec' };
-                    const q4Val = q4tx.filter(t => matchVendor(vendor, t.vendor) && t.month === monthMap[qk]).reduce((s, t) => s + t.amount, 0);
-                    html += `<td class="num cell q4-ref ${qi === 0 ? 'q-sep' : ''}" style="opacity:0.4">${q4Val ? fmtWhole(q4Val) : ''}</td>`;
-                });
                 MONTH_KEYS.forEach((mk, mi) => {
                     const mLabel = MONTH_LABELS[mi];
                     const val = vtx.filter(t => t.month === mLabel).reduce((s, t) => s + t.amount, 0);
@@ -1792,7 +1713,6 @@ function renderMonthlySpreadsheet() {
     const gVariance = grandBudget - grandAnnual;
     const gPct = grandBudget > 0 ? grandAnnual / grandBudget : 0;
     html += '<tr class="grand-total-row"><td class="sticky-col-toggle"></td><td class="row-label-cell sticky-col-name">TOTAL (Programs + T&amp;E)</td>';
-    Q4_KEYS.forEach((qk, qi) => html += `<td class="num cell ${qi === 0 ? 'q-sep' : ''}"></td>`);
     MONTH_KEYS.forEach((mk, mi) => {
         const monthLabel = MONTH_LABELS[mi];
         const isPast = mi <= curMonthIdx;
@@ -1814,9 +1734,8 @@ function renderMonthlySpreadsheet() {
 }
 
 // Render a single vendor row in the monthly spreadsheet
-function renderVendorMonthlyRow(vm, catTx, q4tx, curMonthIdx, isPres) {
+function renderVendorMonthlyRow(vm, catTx, curMonthIdx, isPres) {
     const MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const Q4_KEYS = ['oct25','nov25','dec25'];
     const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const isDraft = vm.isDraft || (vm.notes || '').toLowerCase().includes('draft');
     const isDisabled = appState.disabledVendors[vm.vendor];
@@ -1828,15 +1747,6 @@ function renderVendorMonthlyRow(vm, catTx, q4tx, curMonthIdx, isPres) {
     let html = `<tr class="vendor-row ${rowClass}"><td class="row-label-cell sticky-col-toggle">`;
     html += `<button class="toggle-btn ${isDisabled ? '' : 'on'}" onclick="toggleVendor('${esc(vm.vendor)}')">${isDisabled ? '' : '✓'}</button></td>`;
     html += `<td class="row-label-cell sticky-col-name" style="padding-left:34px" data-vm-name="${vendorIdx}">${esc(vm.vendor)}</td>`;
-
-    // Q4'25 cells
-    Q4_KEYS.forEach((qk, qi) => {
-        const monthMap = { oct25: 'Oct', nov25: 'Nov', dec25: 'Dec' };
-        const q4Actual = q4tx.filter(t => matchVendor(vm.vendor, t.vendor) && t.month === monthMap[qk]).reduce((s, t) => s + t.amount, 0);
-        const q4Plan = vm[qk] || 0;
-        const val = q4Actual || q4Plan;
-        html += `<td class="num cell q4-ref ${qi === 0 ? 'q-sep' : ''}" style="opacity:0.4;font-size:11px">${val ? fmtWhole(val) : ''}</td>`;
-    });
 
     // 2026 month cells
     MONTH_KEYS.forEach((mk, mi) => {
@@ -1943,7 +1853,6 @@ function toggleVendor(vendor) {
 function calAddRow(category) {
     const subMap = { 'Programs': 'Other', 'T&E': 'Other' };
     const newVM = { vendor: '', subcategory: subMap[category] || '', category,
-        oct25: 0, nov25: 0, dec25: 0,
         jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
         jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: '' };
     appState.vendorMonthly.push(newVM);
@@ -2113,7 +2022,6 @@ function renderExpenses() {
     html += '<div class="quarter-selector">';
     const expQtrs = [
         { val: '', label: 'All' },
-        { val: 'Q4 2025', label: "Q4 '25" },
         { val: 'Q1 2026', label: 'Q1' },
         { val: 'Q2 2026', label: 'Q2' },
         { val: 'Q3 2026', label: 'Q3' },
