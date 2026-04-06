@@ -71,6 +71,7 @@ const appState = {
     presentationMode: false,
     txFilters: { search: '', category: '', quarter: '', status: '' },
     txSort: { col: null, dir: 'asc' },
+    expCollapsed: {}, // { 'Headcount': false, 'Programs:Consulting': true, ... }
     // v4: Inline editing
     inlineEdit: { active: false, rowId: null, field: null, originalValue: null, element: null },
     // v5: Monthly spreadsheet — drill-down month for transaction detail view
@@ -972,16 +973,22 @@ function renderDashboard() {
     html += `<div class="kpi-card positive"><div class="kpi-label">SW Savings Driven</div><div class="kpi-value">${fmtWhole(totalSavings)}</div><div class="kpi-trend positive">Annual, outside the $446K envelope</div></div>`;
     html += '</div>';
 
-    // Charts row 1: Monthly Stacked + Cumulative
+    // Charts row 1: Quarterly Category Comparison + Cumulative vs Pace
     html += '<div class="chart-grid">';
-    html += `<div class="chart-card"><div class="chart-title">Monthly Spend (Programs + T&E)</div><div class="chart-wrapper"><canvas id="monthlyStackChart"></canvas></div></div>`;
-    html += `<div class="chart-card"><div class="chart-title">Cumulative vs Budget Pace</div><div class="chart-wrapper"><canvas id="cumulativeChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Quarterly Spend by Category</div><div class="chart-wrapper"><canvas id="quarterlyBarChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Cumulative Spend vs Budget Pace (Programs + T&E)</div><div class="chart-wrapper"><canvas id="cumulativeChart"></canvas></div></div>`;
     html += '</div>';
 
-    // Charts row 2: Utilization Gauges + Allocation
+    // Charts row 2: Programs Waterfall + Subcategory Breakdown
     html += '<div class="chart-grid">';
-    html += `<div class="chart-card"><div class="chart-title">Category Utilization</div><div class="chart-wrapper"><canvas id="utilizationChart"></canvas></div></div>`;
-    html += `<div class="chart-card"><div class="chart-title">Programs Allocation by Subcategory</div><div class="chart-wrapper"><canvas id="allocationChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Programs Budget Waterfall</div><div class="chart-wrapper"><canvas id="waterfallChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Programs Spend by Subcategory (Actual + Committed)</div><div class="chart-wrapper"><canvas id="subcategoryChart"></canvas></div></div>`;
+    html += '</div>';
+
+    // Charts row 3: Monthly Actuals vs Forecast + Category Utilization
+    html += '<div class="chart-grid">';
+    html += `<div class="chart-card"><div class="chart-title">Monthly Spend — Actual vs Forecast</div><div class="chart-wrapper"><canvas id="monthlyActualForecastChart"></canvas></div></div>`;
+    html += `<div class="chart-card"><div class="chart-title">Budget Utilization by Category</div><div class="chart-wrapper"><canvas id="utilizationChart"></canvas></div></div>`;
     html += '</div>';
 
     // Assumptions panel — structured notes (matches mockup)
@@ -999,119 +1006,173 @@ function renderDashboard() {
 }
 
 function renderDashboardCharts() {
-    destroyChart('monthlyStack'); destroyChart('cumulative'); destroyChart('utilization'); destroyChart('allocation');
+    destroyChart('quarterlyBar'); destroyChart('cumulative'); destroyChart('utilization');
+    destroyChart('waterfall'); destroyChart('subcategory'); destroyChart('monthlyActualForecast');
     const c = appState.computed;
     const textColor = '#0A1849';
     const gridColor = 'rgba(0,0,0,0.06)';
     const fontOpts = { family: "'Inter', sans-serif", size: 10 };
     const curIdx = getCurrentMonthIdx();
+    const MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const tx2026 = appState.transactions.filter(t => t.year === 2026);
 
-    // 1. Monthly Stacked Bars (Programs + T&E)
-    const stackCtx = document.getElementById('monthlyStackChart');
-    if (stackCtx) {
-        const progData = CONFIG.MONTHS.map(m => c.byMonth[m] ? c.byMonth[m].programs : 0);
-        const teData = CONFIG.MONTHS.map(m => c.byMonth[m] ? c.byMonth[m].te : 0);
-        appState.charts.monthlyStack = new Chart(stackCtx, {
+    // Helper: get actual spend for a category in a given quarter
+    function qActual(cat, q) {
+        return filterByQuarter(tx2026, q).filter(t => t.category === cat).reduce((s, t) => s + t.amount, 0);
+    }
+    // Helper: get committed/planned spend for a category in a given quarter
+    function qPlanned(cat, q) {
+        return getPlannedItemsForQuarter(q).filter(p => p.category === cat).reduce((s, p) => s + p.amount, 0);
+    }
+
+    // 1. Quarterly Spend by Category — stacked bar: Programs, T&E, (Headcount if visible)
+    const qBarCtx = document.getElementById('quarterlyBarChart');
+    if (qBarCtx) {
+        const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
+        const qLabels = quarters.map(q => q + ' 2026');
+        const showHC = isHeadcountVisible();
+        const datasets = [
+            { label: 'Programs (Actual)', data: quarters.map(q => qActual('Programs', q)), backgroundColor: 'rgba(71,57,231,0.8)', borderRadius: 2 },
+            { label: 'Programs (Committed)', data: quarters.map(q => qPlanned('Programs', q)), backgroundColor: 'rgba(71,57,231,0.25)', borderRadius: 2 },
+            { label: 'T&E (Actual)', data: quarters.map(q => qActual('T&E', q)), backgroundColor: 'rgba(255,186,0,0.8)', borderRadius: 2 },
+            { label: 'T&E (Committed)', data: quarters.map(q => qPlanned('T&E', q)), backgroundColor: 'rgba(255,186,0,0.25)', borderRadius: 2 },
+        ];
+        if (showHC) {
+            datasets.push({ label: 'Headcount', data: quarters.map(q => qActual('Headcount', q)), backgroundColor: 'rgba(10,24,73,0.5)', borderRadius: 2 });
+        }
+        appState.charts.quarterlyBar = new Chart(qBarCtx, {
             type: 'bar',
-            data: { labels: CONFIG.MONTHS, datasets: [
-                { label: 'Programs', data: progData, backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 },
-                { label: 'T&E', data: teData, backgroundColor: 'rgba(255,186,0,0.7)', borderRadius: 2 }
-            ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+            data: { labels: qLabels, datasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 
-    // 2. Cumulative vs Pace (with forecast line extending through Q4)
+    // 2. Cumulative vs Pace — includes committed events for future months
     const cumCtx = document.getElementById('cumulativeChart');
     if (cumCtx) {
-        const actualCum = []; const forecastCum = []; const paceLine = [];
-        let runTotal = 0;
+        const actualCum = []; const forecastCum = []; const paceLine = []; const committedCum = [];
+        let runActual = 0; let runForecast = 0; let runCommitted = 0;
         const monthlyBudget = (CONFIG.BUDGET.programs + CONFIG.BUDGET.te) / 12;
-        // Monthly committed forecast (Programs + T&E, from vendorMonthly)
-        const MONTH_KEYS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+        // Build committed events by month index
+        const committedByMonth = new Array(12).fill(0);
+        if (appState.committedEvents) {
+            appState.committedEvents.forEach(e => {
+                if (e.status === 'On Hold') return;
+                const mi = monthIdx(e.month);
+                if (mi >= 0) committedByMonth[mi] += e.amount;
+            });
+        }
         CONFIG.MONTHS.forEach((m, i) => {
-            const mTotal = c.byMonth[m] ? c.byMonth[m].programs + c.byMonth[m].te : 0;
-            if (i <= curIdx && mTotal > 0) { runTotal += mTotal; actualCum.push(runTotal); }
-            else actualCum.push(null);
+            const mActual = c.byMonth[m] ? c.byMonth[m].programs + c.byMonth[m].te : 0;
             paceLine.push(monthlyBudget * (i + 1));
-        });
-        // Forecast line: continues from last actual month through Dec using vendorMonthly
-        let fcRunTotal = runTotal;
-        CONFIG.MONTHS.forEach((m, i) => {
-            if (i <= curIdx) { forecastCum.push(null); }
-            else {
+            if (i <= curIdx) {
+                runActual += mActual;
+                actualCum.push(runActual);
+                forecastCum.push(null);
+            } else {
+                actualCum.push(null);
                 const mk = MONTH_KEYS[i];
-                const monthForecast = appState.vendorMonthly.filter(vm => (vm.category === 'Programs' || vm.category === 'T&E') && !appState.disabledVendors[vm.vendor]).reduce((s, vm) => s + (vm[mk] || 0), 0);
-                fcRunTotal += monthForecast;
-                forecastCum.push(fcRunTotal);
+                const monthFc = appState.vendorMonthly.filter(vm => (vm.category === 'Programs' || vm.category === 'T&E') && !appState.disabledVendors[vm.vendor]).reduce((s, vm) => s + (vm[mk] || 0), 0);
+                runForecast += monthFc;
+                forecastCum.push(runActual + runForecast);
             }
         });
-        // Connect forecast to last actual point
-        if (curIdx >= 0 && curIdx < 11) forecastCum[curIdx] = runTotal;
+        if (curIdx >= 0 && curIdx < 11) forecastCum[curIdx] = runActual;
         appState.charts.cumulative = new Chart(cumCtx, {
             type: 'line',
             data: { labels: CONFIG.MONTHS, datasets: [
                 { label: 'Actual', data: actualCum, borderColor: 'rgba(71,57,231,1)', backgroundColor: 'rgba(71,57,231,0.08)', fill: true, tension: 0.3, pointRadius: 4, spanGaps: false },
-                { label: 'Forecast', data: forecastCum, borderColor: 'rgba(107,114,128,0.5)', borderDash: [4, 4], backgroundColor: 'rgba(107,114,128,0.04)', fill: true, tension: 0.3, pointRadius: 2, spanGaps: false },
+                { label: 'Forecast (vendorMonthly)', data: forecastCum, borderColor: 'rgba(107,114,128,0.5)', borderDash: [4, 4], backgroundColor: 'rgba(107,114,128,0.04)', fill: true, tension: 0.3, pointRadius: 2, spanGaps: false },
                 { label: 'Budget Pace', data: paceLine, borderColor: 'rgba(5,150,105,0.6)', borderDash: [8, 4], pointRadius: 0, fill: false, tension: 0 }
             ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } }, x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } } } }
         });
     }
 
-    // 3. Utilization Gauges (half-doughnut)
-    const utilCtx = document.getElementById('utilizationChart');
-    if (utilCtx) {
-        const progUsed = c.ytdActual.programs + (c.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0));
-        const progPct = CONFIG.BUDGET.programs > 0 ? progUsed / CONFIG.BUDGET.programs : 0;
-        const teUsed = c.ytdActual.te;
-        const tePctVal = CONFIG.BUDGET.te > 0 ? teUsed / CONFIG.BUDGET.te : 0;
-        appState.charts.utilization = new Chart(utilCtx, {
-            type: 'doughnut',
-            data: { labels: ['Programs Used', 'Programs Remaining', 'T&E Used', 'T&E Remaining'], datasets: [
-                { data: [Math.min(progPct, 1) * 100, Math.max(1 - progPct, 0) * 100], backgroundColor: ['rgba(71,57,231,0.8)', 'rgba(71,57,231,0.1)'], circumference: 180, rotation: 270, borderWidth: 0 },
-                { data: [Math.min(tePctVal, 1) * 100, Math.max(1 - tePctVal, 0) * 100], backgroundColor: ['rgba(255,186,0,0.8)', 'rgba(255,186,0,0.1)'], circumference: 180, rotation: 270, borderWidth: 0 }
-            ]},
-            options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.raw.toFixed(1) + '%' } } } }
+    // 3. Programs Budget Waterfall — Budget → Actual → Outstanding → Committed → Available
+    const wfCtx = document.getElementById('waterfallChart');
+    if (wfCtx) {
+        const wf = c.programsWaterfall;
+        const labels = ['Budget', 'Spent', 'Outstanding', 'Committed', 'Available'];
+        const data = [wf.budget, -wf.spent, -wf.outstanding, -wf.committed, wf.available];
+        const colors = data.map((v, i) => {
+            if (i === 0) return 'rgba(71,57,231,0.7)';
+            if (i === labels.length - 1) return wf.available >= 0 ? 'rgba(5,150,105,0.7)' : 'rgba(220,38,38,0.7)';
+            return 'rgba(220,38,38,0.5)';
+        });
+        appState.charts.waterfall = new Chart(wfCtx, {
+            type: 'bar',
+            data: { labels, datasets: [{ data: data.map(Math.abs), backgroundColor: colors, borderRadius: 2 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmtWhole(data[ctx.dataIndex]) } } }, scales: { x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 
-    // 4. Programs Budget Allocation by Subcategory (Actuals + Future Plan from vendorMonthly)
-    const allocCtx = document.getElementById('allocationChart');
-    if (allocCtx) {
-        const allocMK = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    // 4. Programs Spend by Subcategory — same grouping as Budget tab
+    const subCtx = document.getElementById('subcategoryChart');
+    if (subCtx) {
+        const progTx = tx2026.filter(t => t.category === 'Programs');
         const subActuals = {};
-        const subFuturePlan = {};
-        // Future months from vendorMonthly
-        appState.vendorMonthly.filter(vm => vm.category === 'Programs').forEach(vm => {
-            const sub = vm.subcategory || 'Other';
-            if (!subFuturePlan[sub]) subFuturePlan[sub] = 0;
-            allocMK.forEach((mk, mi) => { if (mi > curIdx) subFuturePlan[sub] += (vm[mk] || 0); });
-        });
-        // Past-month actuals mapped via vendorMonthly subcategories
-        const progTx = appState.transactions.filter(t => t.year === 2026 && t.category === 'Programs');
-        appState.vendorMonthly.filter(vm => vm.category === 'Programs').forEach(vm => {
-            const sub = vm.subcategory;
-            if (!subActuals[sub]) subActuals[sub] = 0;
-            progTx.filter(t => matchVendor(vm.vendor, t.vendor)).forEach(t => { subActuals[sub] += t.amount; });
-        });
-        // Unmatched actuals
-        const matchedVendors = appState.vendorMonthly.filter(vm => vm.category === 'Programs').map(vm => vm.vendor);
-        progTx.filter(t => !matchedVendors.some(mv => matchVendor(mv, t.vendor))).forEach(t => {
+        progTx.forEach(t => {
             const sub = t.subcategory || 'Other';
-            if (!subActuals[sub]) subActuals[sub] = 0;
-            subActuals[sub] += t.amount;
+            subActuals[sub] = (subActuals[sub] || 0) + t.amount;
         });
-        const allSubs = [...new Set([...Object.keys(subActuals), ...Object.keys(subFuturePlan)])].sort();
-        const actualData = allSubs.map(s => subActuals[s] || 0);
-        const planData = allSubs.map(s => subFuturePlan[s] || 0);
-        appState.charts.allocation = new Chart(allocCtx, {
+        // Add committed events grouped by subcategory
+        const subCommitted = {};
+        ['Q2', 'Q3', 'Q4'].forEach(q => {
+            getPlannedItemsForQuarter(q).filter(p => p.category === 'Programs').forEach(p => {
+                const sub = p.subcategory || 'Other';
+                subCommitted[sub] = (subCommitted[sub] || 0) + p.amount;
+            });
+        });
+        const allSubs = [...new Set([...Object.keys(subActuals), ...Object.keys(subCommitted)])].sort(
+            (a, b) => ((subActuals[b] || 0) + (subCommitted[b] || 0)) - ((subActuals[a] || 0) + (subCommitted[a] || 0))
+        );
+        appState.charts.subcategory = new Chart(subCtx, {
             type: 'bar',
             data: { labels: allSubs, datasets: [
-                { label: 'YTD Actual', data: actualData, backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 },
-                { label: 'Future Plan', data: planData, backgroundColor: 'rgba(71,57,231,0.15)', borderRadius: 2 }
+                { label: 'YTD Actual', data: allSubs.map(s => subActuals[s] || 0), backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 },
+                { label: 'Committed (Q2-Q4)', data: allSubs.map(s => subCommitted[s] || 0), backgroundColor: 'rgba(71,57,231,0.2)', borderRadius: 2 }
             ]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+            options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { y: { stacked: true, ticks: { font: { ...fontOpts, size: 9 }, color: textColor }, grid: { display: false } }, x: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+        });
+    }
+
+    // 5. Monthly Actual vs Forecast — dual bars showing actuals (solid) vs vendorMonthly plan (hatched)
+    const mafCtx = document.getElementById('monthlyActualForecastChart');
+    if (mafCtx) {
+        const actualData = CONFIG.MONTHS.map(m => c.byMonth[m] ? c.byMonth[m].programs + c.byMonth[m].te : 0);
+        const forecastData = CONFIG.MONTHS.map((m, i) => {
+            const mk = MONTH_KEYS[i];
+            return appState.vendorMonthly.filter(vm => (vm.category === 'Programs' || vm.category === 'T&E') && !appState.disabledVendors[vm.vendor]).reduce((s, vm) => s + (vm[mk] || 0), 0);
+        });
+        appState.charts.monthlyActualForecast = new Chart(mafCtx, {
+            type: 'bar',
+            data: { labels: CONFIG.MONTHS, datasets: [
+                { label: 'Actual', data: actualData.map((v, i) => i <= curIdx ? v : null), backgroundColor: 'rgba(71,57,231,0.7)', borderRadius: 2 },
+                { label: 'Plan (vendorMonthly)', data: forecastData, backgroundColor: 'rgba(71,57,231,0.12)', borderColor: 'rgba(71,57,231,0.3)', borderWidth: 1, borderRadius: 2 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
+        });
+    }
+
+    // 6. Budget Utilization — horizontal bar per category (actual/budget %)
+    const utilCtx = document.getElementById('utilizationChart');
+    if (utilCtx) {
+        const showHC = isHeadcountVisible();
+        const cats = showHC ? ['Programs', 'T&E', 'Headcount'] : ['Programs', 'T&E'];
+        const budgets = { 'Programs': CONFIG.BUDGET.programs, 'T&E': CONFIG.BUDGET.te, 'Headcount': CONFIG.BUDGET.headcount };
+        const actuals = { 'Programs': c.ytdActual.programs, 'T&E': c.ytdActual.te, 'Headcount': c.ytdActual.headcount };
+        const forecasts = { 'Programs': c.forecast.programs, 'T&E': c.forecast.te, 'Headcount': c.forecast.headcount };
+        const catColors = { 'Programs': 'rgba(71,57,231,0.7)', 'T&E': 'rgba(255,186,0,0.7)', 'Headcount': 'rgba(10,24,73,0.5)' };
+        const catColorsFc = { 'Programs': 'rgba(71,57,231,0.2)', 'T&E': 'rgba(255,186,0,0.2)', 'Headcount': 'rgba(10,24,73,0.15)' };
+        appState.charts.utilization = new Chart(utilCtx, {
+            type: 'bar',
+            data: { labels: cats, datasets: [
+                { label: 'YTD Actual', data: cats.map(c => actuals[c]), backgroundColor: cats.map(c => catColors[c]), borderRadius: 2 },
+                { label: 'Forecast', data: cats.map(c => forecasts[c]), backgroundColor: cats.map(c => catColorsFc[c]), borderRadius: 2 },
+                { label: 'Budget', data: cats.map(c => budgets[c]), type: 'line', borderColor: 'rgba(5,150,105,0.6)', borderDash: [6, 3], pointRadius: 4, pointBackgroundColor: 'rgba(5,150,105,0.8)', fill: false, tension: 0 }
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: fontOpts, color: textColor, boxWidth: 10 } }, tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + fmtWhole(ctx.raw) } } }, scales: { x: { stacked: true, ticks: { font: fontOpts, color: textColor }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtWhole(v), font: fontOpts, color: textColor }, grid: { color: gridColor } } } }
         });
     }
 }
@@ -1514,8 +1575,10 @@ function renderMonthlySpreadsheet() {
         return q4tx.filter(t => matchVendor(vendorName, t.vendor) && t.month === monthMap[q4Month]).reduce((s, t) => s + t.amount, 0);
     }
 
-    // Toolbar
-    let html = '<div class="zoom-bar">';
+    // Shared budget toolbar (view toggle + quarter selector)
+    let html = renderBudgetToolbar(appState.budgetQuarter || getDefaultQuarter());
+    // Expand/collapse + hint
+    html += '<div class="zoom-bar">';
     html += '<span style="font-size:11px;color:var(--text-muted)">Click any month header to see transaction detail</span>';
     html += '<div style="margin-left:auto;display:flex;gap:6px">';
     html += '<button class="zoom-btn" onclick="calExpandAll()">Expand All</button>';
@@ -2016,6 +2079,10 @@ function renderExpenses() {
     html += `<select class="filter-select" onchange="updateTxFilter('category', this.value)"><option value="">All Categories</option>${showHC ? '<option value="Headcount"' + (f.category === 'Headcount' ? ' selected' : '') + '>Headcount</option>' : ''}<option value="Programs" ${f.category === 'Programs' ? 'selected' : ''}>Programs</option><option value="T&E" ${f.category === 'T&E' ? 'selected' : ''}>T&E</option><option value="Outside Envelope" ${f.category === 'Outside Envelope' ? 'selected' : ''}>Outside Envelope</option></select>`;
     html += `<select class="filter-select" onchange="updateTxFilter('status', this.value)"><option value="">All Status</option><option value="Actual" ${f.status === 'Actual' ? 'selected' : ''}>Actual</option><option value="Outstanding" ${f.status === 'Outstanding' ? 'selected' : ''}>Outstanding</option></select>`;
     html += `<button class="filter-clear" onclick="clearTxFilters()">Clear</button>`;
+    html += '<div style="margin-left:auto;display:flex;gap:6px">';
+    html += '<button class="zoom-btn" onclick="expExpandAll()">Expand All</button>';
+    html += '<button class="zoom-btn" onclick="expCollapseAll()">Collapse All</button>';
+    html += '</div>';
     html += `<button class="btn btn-secondary" onclick="exportCSV()">CSV</button>`;
     if (!isPres) html += `<button class="btn btn-primary" data-action="add" onclick="openAddTxModal()">+ Add</button>`;
     html += '</div>';
@@ -2037,31 +2104,48 @@ function renderExpenses() {
         const allItems = Object.values(catSubs).flat();
         if (allItems.length === 0) return;
         const catTotal = allItems.reduce((s, t) => s + t.amount, 0);
-        html += `<tr class="category-row"><td colspan="9">${esc(cat)} (${allItems.length}) — ${fmt(catTotal)}</td></tr>`;
+        const catCollapsed = appState.expCollapsed[cat];
+        const catToggle = catCollapsed ? '&#9654;' : '&#9660;';
+        html += `<tr class="category-row" style="cursor:pointer" onclick="toggleExpCategory('${esc(cat)}')"><td colspan="9">${catToggle} ${esc(cat)} (${allItems.length}) — ${fmt(catTotal)}</td></tr>`;
 
-        Object.entries(catSubs).sort(sortSubcategories).forEach(([sub, items]) => {
-            if (items.length > 1 || Object.keys(catSubs).length > 1) {
-                const subTotal = items.reduce((s, t) => s + t.amount, 0);
-                html += `<tr class="subcategory-row"><td colspan="9" style="padding-left:18px">${esc(sub)} (${items.length}) — ${fmt(subTotal)}</td></tr>`;
-            }
-            items.forEach(t => {
-                html += `<tr oncontextmenu="showContextMenu(event,${t._row})">`;
-                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'date')">${esc(t.date)}</td>`;
-                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'vendor')">${esc(t.vendor)}</td>`;
-                html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${t._row},'amount')">${fmt(t.amount)}</td>`;
-                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'category')">${categoryPill(t.category)}</td>`;
-                html += `<td>${esc(t.subcategory)}</td>`;
-                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'gl')">${esc(t.gl)}</td>`;
-                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'department')">${esc(t.department)}</td>`;
-                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'memo')">${esc(t.memo)}</td>`;
-                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'status')">${statusPill(t.status)}</td></tr>`;
+        if (!catCollapsed) {
+            Object.entries(catSubs).sort(sortSubcategories).forEach(([sub, items]) => {
+                const subKey = cat + ':' + sub;
+                const subCollapsed = appState.expCollapsed[subKey];
+                if (items.length > 1 || Object.keys(catSubs).length > 1) {
+                    const subTotal = items.reduce((s, t) => s + t.amount, 0);
+                    const subToggle = subCollapsed ? '&#9654;' : '&#9660;';
+                    html += `<tr class="subcategory-row" style="cursor:pointer" onclick="toggleExpCategory('${esc(subKey)}')"><td colspan="9" style="padding-left:18px">${subToggle} ${esc(sub)} (${items.length}) — ${fmt(subTotal)}</td></tr>`;
+                }
+                if (!subCollapsed) {
+                    items.forEach(t => {
+                        html += `<tr oncontextmenu="showContextMenu(event,${t._row})">`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'date')">${esc(t.date)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'vendor')">${esc(t.vendor)}</td>`;
+                        html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${t._row},'amount')">${fmt(t.amount)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'category')">${categoryPill(t.category)}</td>`;
+                        html += `<td>${esc(t.subcategory)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'gl')">${esc(t.gl)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'department')">${esc(t.department)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'memo')">${esc(t.memo)}</td>`;
+                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'status')">${statusPill(t.status)}</td></tr>`;
+                    });
+                }
             });
-        });
+        }
     });
     const grandTotal = filtered.reduce((s, t) => s + t.amount, 0);
     html += `<tr class="grand-total-row"><td colspan="2">Total (${filtered.length})</td><td class="num">${fmt(grandTotal)}</td><td colspan="6"></td></tr>`;
     html += '</tbody></table></div></div>';
     el.innerHTML = html;
+}
+function toggleExpCategory(key) { appState.expCollapsed[key] = !appState.expCollapsed[key]; renderExpenses(); }
+function expExpandAll() { appState.expCollapsed = {}; renderExpenses(); }
+function expCollapseAll() {
+    const showHC = isHeadcountVisible();
+    const cats = showHC ? ['Headcount', 'Programs', 'T&E', 'Outside Envelope'] : ['Programs', 'T&E', 'Outside Envelope'];
+    cats.forEach(c => { appState.expCollapsed[c] = true; });
+    renderExpenses();
 }
 function updateTxFilter(key, val) { appState.txFilters[key] = val; if (key === 'search') debounce(renderExpenses, 300)(); else renderExpenses(); }
 function clearTxFilters() { appState.txFilters = { search: '', category: '', quarter: '', status: '' }; renderExpenses(); }
