@@ -183,9 +183,13 @@ function initAuth() {
     if (typeof google === 'undefined' || !google.accounts) { setTimeout(initAuth, 500); return; }
     appState.tokenClient = google.accounts.oauth2.initTokenClient({ client_id: CONFIG.CLIENT_ID, scope: CONFIG.SCOPES, callback: handleAuthResponse });
 }
-function handleAuthResponse(resp) {
+async function handleAuthResponse(resp) {
     if (resp.error) { showToast('Sign in failed: ' + resp.error, 'error'); return; }
-    appState.accessToken = resp.access_token; appState.isSignedIn = true; updateAuthUI(); fetchAllSheets();
+    appState.accessToken = resp.access_token; appState.isSignedIn = true;
+    // Fetch email and set audience BEFORE loading data
+    await fetchUserEmail();
+    updateAuthUI();
+    fetchAllSheets();
 }
 function signIn() { if (!appState.tokenClient) { showToast('Auth not ready', 'warning'); return; } appState.tokenClient.requestAccessToken(); }
 function signOut() {
@@ -206,7 +210,14 @@ function updateAuthUI() {
     const audienceSelect = document.getElementById('audienceFilter');
     if (appState.isSignedIn) {
         signInBtn.style.display = 'none'; userInfo.style.display = 'flex';
-        fetchUserEmail();
+        document.getElementById('userEmail').textContent = appState.userEmail || '';
+        // Show audience selector only for admin users
+        if (isAdminUser()) {
+            audienceSelect.style.display = '';
+            audienceSelect.value = appState.audienceFilter;
+        } else {
+            audienceSelect.style.display = 'none';
+        }
     } else {
         signInBtn.style.display = 'inline-flex'; userInfo.style.display = 'none';
         document.getElementById('userEmail').textContent = '';
@@ -219,18 +230,8 @@ async function fetchUserEmail() {
         const r = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: 'Bearer ' + appState.accessToken } });
         const d = await r.json();
         appState.userEmail = d.email;
-        document.getElementById('userEmail').textContent = d.email;
-        // Set audience based on identity
-        if (isAdminUser()) {
-            appState.audienceFilter = 'full';
-            document.getElementById('audienceFilter').value = 'full';
-            document.getElementById('audienceFilter').style.display = '';
-        } else {
-            appState.audienceFilter = 'team';
-            document.getElementById('audienceFilter').value = 'team';
-            document.getElementById('audienceFilter').style.display = 'none';
-        }
-        recompute(); renderActiveTab();
+        // Set audience based on identity — admin sees everything, others see team only
+        appState.audienceFilter = isAdminUser() ? 'full' : 'team';
     } catch (e) { console.error('Failed to fetch user email:', e); }
 }
 
@@ -565,18 +566,10 @@ function loadFallbackData() {
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 2000,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'INTL reseller event' },
         // ── Programs — Events (Q2 draft / on hold) ──
-        { vendor: 'ASU+GSV Summit', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
-          jan: 0, feb: 0, mar: 0, apr: 30000, may: 0, jun: 0,
-          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft — estimate, not in TOTALS budget', isDraft: true },
         { vendor: 'Class Day Nairobi', subcategory: 'Events', category: 'Programs',
           oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 1500, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft — On Hold as of 11/3', isDraft: true },
-        { vendor: 'Cornerstone Spark', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
-          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
-          jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Draft — Q2, costs TBD', isDraft: true },
         // ── Programs — Events (Q3) ──
         { vendor: 'Class Day Italy', subcategory: 'Events', category: 'Programs',
           oct25: 0, nov25: 0, dec25: 0,
@@ -586,10 +579,6 @@ function loadFallbackData() {
           oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 1000, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'BD. TBC costs w/ Russell' },
-        { vendor: 'D2L Fusion', subcategory: 'Events', category: 'Programs',
-          oct25: 0, nov25: 0, dec25: 0,
-          jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
-          jul: 0, aug: 0, sep: 24350, oct: 0, nov: 0, dec: 0, notes: 'Draft — estimate from event tab', isDraft: true },
         { vendor: 'Class Day Dubai', subcategory: 'Events', category: 'Programs',
           oct25: 0, nov25: 0, dec25: 0,
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
@@ -626,7 +615,6 @@ function loadFallbackData() {
         { quarter: 'Q2', vendor: 'Class Day Nairobi', amount: 1500, status: 'On Hold', gl: '6405', dept: '402-Corp Marketing', date: '06/01/2026', memo: 'On Hold as of 11/3', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jun' },
         { quarter: 'Q2', vendor: 'TM Sponsored Webinar', amount: 9000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '05/01/2026', memo: 'Training Magazine', category: 'Programs', subcategory: 'Conferences/Events', month: 'May' },
         // Q3 2026
-        { quarter: 'Q3', vendor: 'D2L Fusion', amount: 24350, status: 'Confirmed', gl: '6405', dept: '401-Education Marketing', date: '07/15/2026', memo: 'Higher Education event', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jul' },
         { quarter: 'Q3', vendor: 'Bb Together User Conference', amount: 1000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '07/14/2026', memo: 'HE event', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jul' },
         { quarter: 'Q3', vendor: 'Class Day Italy', amount: 1500, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '07/01/2026', memo: 'International', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jul' },
         { quarter: 'Q3', vendor: 'Class Day Dubai', amount: 2000, status: 'Tentative', gl: '6405', dept: '402-Corp Marketing', date: '09/01/2026', memo: 'May not take place', category: 'Programs', subcategory: 'Conferences/Events', month: 'Sep' },
@@ -1024,7 +1012,6 @@ function renderDashboard() {
 
     // Assumptions panel — structured notes (matches mockup)
     html += '<div class="section-card"><details class="assumptions-panel" open><summary>Budget Assumptions &amp; Notes</summary><div class="assumptions-notes">';
-    html += '<div class="assumption-note"><span class="assumption-label">Programs budget adjusted</span><span class="assumption-detail">$180K reduced to $90K mid-Q1 to fund Kendall retention (+$100K headcount)</span></div>';
     html += '<div class="assumption-note"><span class="assumption-label">Headcount basis</span><span class="assumption-detail">$336K budget is salary-only. Q1 actual includes tax, benefits, bonus, commissions</span></div>';
     html += '<div class="assumption-note"><span class="assumption-label">Outside Envelope</span><span class="assumption-detail">' + fmtWhole(c.ytdActual.outside) + ' in SW subscriptions sits in GL 6303, not in the $446K marketing budget</span></div>';
     html += '<div class="assumption-note"><span class="assumption-label">Sponge Software</span><span class="assumption-detail">Terminated after Q1. $15,400 in Q1 was final spend. $0 from Q2 forward.</span></div>';
@@ -2069,11 +2056,48 @@ function renderExpenses() {
     const el = document.getElementById('tab-expenses');
     const allTx = getFilteredTransactions();
     const f = appState.txFilters;
-    let filtered = allTx.filter(t => {
-        if (f.search) { const s = f.search.toLowerCase(); if (!(t.vendor.toLowerCase().includes(s) || t.memo.toLowerCase().includes(s) || t.glName.toLowerCase().includes(s) || t.department.toLowerCase().includes(s))) return false; }
+
+    // Merge committed events as pseudo-transactions for display
+    let augmented = [...allTx];
+    if (appState.committedEvents) {
+        appState.committedEvents.forEach(e => {
+            if (e.status === 'Confirmed' || e.status === 'On Hold' || e.status === 'Tentative') {
+                augmented.push({
+                    _row: 0, _planned: true, _status: e.status,
+                    date: e.date, vendor: e.vendor, amount: e.amount,
+                    gl: e.gl, glName: e.subcategory, department: e.dept, memo: e.memo,
+                    category: e.category, subcategory: e.subcategory, month: e.month,
+                    quarter: e.quarter, year: 2026, status: e.status,
+                    isCarryover: false, employeeType: ''
+                });
+            }
+        });
+    }
+    // Add recurring commitments for future months
+    if (appState.recurringCommitments) {
+        const curMonthIdx = getCurrentMonthIdx();
+        appState.recurringCommitments.forEach(rc => {
+            CONFIG.MONTHS.forEach((m, mi) => {
+                if (mi >= rc.startMonth && mi <= rc.endMonth && mi > curMonthIdx) {
+                    augmented.push({
+                        _row: 0, _planned: true, _status: 'Planned', _recurring: true,
+                        date: m + ' 2026', vendor: rc.vendor, amount: rc.monthlyAmount,
+                        gl: rc.gl, glName: rc.subcategory, department: '', memo: 'Recurring',
+                        category: rc.category, subcategory: rc.subcategory, month: m,
+                        quarter: quarterOf(m), year: 2026, status: 'Planned',
+                        isCarryover: false, employeeType: ''
+                    });
+                }
+            });
+        });
+    }
+
+    let filtered = augmented.filter(t => {
+        if (f.search) { const s = f.search.toLowerCase(); if (!(t.vendor.toLowerCase().includes(s) || (t.memo||'').toLowerCase().includes(s) || (t.glName||'').toLowerCase().includes(s) || (t.department||'').toLowerCase().includes(s))) return false; }
         if (f.category && t.category !== f.category) return false;
         if (f.quarter) { const tq = t.quarter + (t.year === 2025 ? ' 2025' : ' 2026'); if (tq !== f.quarter) return false; }
-        if (f.status && t.status !== f.status) return false;
+        if (f.status && f.status !== 'Planned' && t._planned) return false;
+        if (f.status && !t._planned && t.status !== f.status) return false;
         return true;
     });
     if (appState.txSort.col) {
@@ -2142,16 +2166,36 @@ function renderExpenses() {
                 }
                 if (!subCollapsed) {
                     items.forEach(t => {
-                        html += `<tr oncontextmenu="showContextMenu(event,${t._row})">`;
-                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'date')">${esc(t.date)}</td>`;
-                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'vendor')">${esc(t.vendor)}</td>`;
-                        html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${t._row},'amount')">${fmt(t.amount)}</td>`;
-                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'category')">${categoryPill(t.category)}</td>`;
-                        html += `<td>${esc(t.subcategory)}</td>`;
-                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'gl')">${esc(t.gl)}</td>`;
-                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'department')">${esc(t.department)}</td>`;
-                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'memo')">${esc(t.memo)}</td>`;
-                        html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'status')">${statusPill(t.status)}</td></tr>`;
+                        if (t._planned) {
+                            // Committed/planned item — styled differently, not editable
+                            let chipHtml = '';
+                            if (t._status === 'On Hold') chipHtml = '<span class="status-chip hold">ON HOLD</span>';
+                            else if (t._status === 'Tentative') chipHtml = '<span class="status-chip tentative">TENTATIVE</span>';
+                            else if (t._status === 'Confirmed') chipHtml = '<span class="status-chip confirmed">CONFIRMED</span>';
+                            else chipHtml = '<span class="status-chip" style="background:rgba(71,57,231,0.1);color:var(--primary)">PLANNED</span>';
+                            const rowCls = t._status === 'On Hold' ? 'on-hold' : '';
+                            html += `<tr class="${rowCls}" style="font-style:italic;color:var(--text-muted)">`;
+                            html += `<td>${esc(t.date)}</td>`;
+                            html += `<td>${esc(t.vendor)}</td>`;
+                            html += `<td class="num">${fmt(t.amount)}</td>`;
+                            html += `<td>${categoryPill(t.category)}</td>`;
+                            html += `<td>${esc(t.subcategory)}</td>`;
+                            html += `<td>${esc(t.gl)}</td>`;
+                            html += `<td>${esc(t.department)}</td>`;
+                            html += `<td>${esc(t.memo)}</td>`;
+                            html += `<td>${chipHtml}</td></tr>`;
+                        } else {
+                            html += `<tr oncontextmenu="showContextMenu(event,${t._row})">`;
+                            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'date')">${esc(t.date)}</td>`;
+                            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'vendor')">${esc(t.vendor)}</td>`;
+                            html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${t._row},'amount')">${fmt(t.amount)}</td>`;
+                            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'category')">${categoryPill(t.category)}</td>`;
+                            html += `<td>${esc(t.subcategory)}</td>`;
+                            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'gl')">${esc(t.gl)}</td>`;
+                            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'department')">${esc(t.department)}</td>`;
+                            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'memo')">${esc(t.memo)}</td>`;
+                            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'status')">${statusPill(t.status)}</td></tr>`;
+                        }
                     });
                 }
             });
