@@ -76,6 +76,10 @@ const appState = {
     // v5: Monthly spreadsheet — drill-down month for transaction detail view
     calendarMonth: null,
     calendarCollapsed: {},
+    // v6: Quarterly detail view
+    budgetQuarter: null, // auto-detected; 'Q4_2025','Q1','Q2','Q3','Q4','YTD','FULL'
+    budgetView: 'quarterly', // 'quarterly' or 'monthly'
+    budgetCollapsed: {},
     // v4: Budget modeling
     draftItems: [],
     disabledVendors: {},
@@ -210,6 +214,9 @@ async function fetchAllSheets() {
         if (!metaResp.ok) throw new Error('Sheets metadata error: ' + metaResp.status);
         const meta = await metaResp.json();
         const existingTabs = (meta.sheets || []).map(s => s.properties.title);
+        // Capture Transactions sheetId for delete operations
+        const txSheet = (meta.sheets || []).find(s => s.properties.title === 'Transactions');
+        if (txSheet) appState.transactionsSheetId = txSheet.properties.sheetId;
         console.log('Sheets found:', existingTabs);
         // Filter ranges to only existing tabs
         const validRanges = CONFIG.SHEET_RANGES.filter(r => {
@@ -242,26 +249,49 @@ async function fetchAllSheets() {
     } catch (err) { console.error(err); showToast('Sheets error: ' + err.message.substring(0, 80) + '. Using fallback.', 'warning'); loadFallbackData(); }
     finally { appState.isSyncing = false; refreshBtn.classList.remove('spinning'); updateFreshness(); }
 }
+// Token refresh wrapper — retries on 401 with a fresh token
+async function sheetsApiCall(fn) {
+    try {
+        return await fn();
+    } catch (err) {
+        if (err.message && err.message.includes('401') && appState.tokenClient) {
+            return new Promise((resolve) => {
+                appState.tokenClient.callback = (resp) => {
+                    if (!resp.error) {
+                        appState.accessToken = resp.access_token;
+                        resolve(fn());
+                    } else { resolve(false); }
+                };
+                appState.tokenClient.requestAccessToken();
+            });
+        }
+        throw err;
+    }
+}
 async function writeToSheets(range, values) {
     if (!appState.accessToken) { showToast('Sign in to save', 'warning'); return false; }
     try {
-        const resp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
-            method: 'PUT', headers: { Authorization: 'Bearer ' + appState.accessToken, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ range, majorDimension: 'ROWS', values })
+        return await sheetsApiCall(async () => {
+            const resp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
+                method: 'PUT', headers: { Authorization: 'Bearer ' + appState.accessToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ range, majorDimension: 'ROWS', values })
+            });
+            if (!resp.ok) throw new Error('Write failed: ' + resp.status);
+            showToast('Saved', 'success', 2000); return true;
         });
-        if (!resp.ok) throw new Error('Write failed: ' + resp.status);
-        showToast('Saved', 'success', 2000); return true;
     } catch (err) { console.error(err); showToast('Save failed: ' + err.message, 'error'); return false; }
 }
 async function appendToSheets(range, values) {
     if (!appState.accessToken) { showToast('Sign in to save', 'warning'); return false; }
     try {
-        const resp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`, {
-            method: 'POST', headers: { Authorization: 'Bearer ' + appState.accessToken, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ range, majorDimension: 'ROWS', values })
+        return await sheetsApiCall(async () => {
+            const resp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED`, {
+                method: 'POST', headers: { Authorization: 'Bearer ' + appState.accessToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ range, majorDimension: 'ROWS', values })
+            });
+            if (!resp.ok) throw new Error('Append failed: ' + resp.status);
+            showToast('Added', 'success', 2000); return true;
         });
-        if (!resp.ok) throw new Error('Append failed: ' + resp.status);
-        showToast('Added', 'success', 2000); return true;
     } catch (err) { console.error(err); showToast('Add failed: ' + err.message, 'error'); return false; }
 }
 
@@ -552,6 +582,30 @@ function loadFallbackData() {
           jan: 0, feb: 0, mar: 0, apr: 0, may: 0, jun: 0,
           jul: 0, aug: 0, sep: 0, oct: 0, nov: 0, dec: 0, notes: 'Conference lodging' },
     ];
+    // --- Committed/Planned Items for Future Quarters ---
+    appState.committedEvents = [
+        // Q2 2026
+        { quarter: 'Q2', vendor: 'Docebo Inspire', amount: 25000, status: 'Confirmed', gl: '6405', dept: '401-Education Marketing', date: '04/20/2026', memo: 'Annual conference — Miami Beach, FL', category: 'Programs', subcategory: 'Conferences/Events', month: 'Apr' },
+        { quarter: 'Q2', vendor: 'Bb Durham User Conference', amount: 1700, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '04/20/2026', memo: 'Sponsorship + booth', category: 'Programs', subcategory: 'Conferences/Events', month: 'Apr' },
+        { quarter: 'Q2', vendor: 'ATD Conference', amount: 9000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '05/17/2026', memo: 'Booth — Los Angeles, CA', category: 'Programs', subcategory: 'Conferences/Events', month: 'May' },
+        { quarter: 'Q2', vendor: 'Class Day eLearnia Spain', amount: 2000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '05/05/2026', memo: 'International reseller event', category: 'Programs', subcategory: 'Conferences/Events', month: 'May' },
+        { quarter: 'Q2', vendor: 'Class Day Germany', amount: 2000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '06/01/2026', memo: 'International reseller event', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jun' },
+        { quarter: 'Q2', vendor: 'Class Day Nairobi', amount: 1500, status: 'On Hold', gl: '6405', dept: '402-Corp Marketing', date: '06/01/2026', memo: 'On Hold as of 11/3', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jun' },
+        { quarter: 'Q2', vendor: 'TM Sponsored Webinar', amount: 9000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '05/01/2026', memo: 'Training Magazine', category: 'Programs', subcategory: 'Conferences/Events', month: 'May' },
+        // Q3 2026
+        { quarter: 'Q3', vendor: 'D2L Fusion', amount: 24350, status: 'Confirmed', gl: '6405', dept: '401-Education Marketing', date: '07/15/2026', memo: 'Higher Education event', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jul' },
+        { quarter: 'Q3', vendor: 'Bb Together User Conference', amount: 1000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '07/14/2026', memo: 'HE event', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jul' },
+        { quarter: 'Q3', vendor: 'Class Day Italy', amount: 1500, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '07/01/2026', memo: 'International', category: 'Programs', subcategory: 'Conferences/Events', month: 'Jul' },
+        { quarter: 'Q3', vendor: 'Class Day Dubai', amount: 2000, status: 'Tentative', gl: '6405', dept: '402-Corp Marketing', date: '09/01/2026', memo: 'May not take place', category: 'Programs', subcategory: 'Conferences/Events', month: 'Sep' },
+        // Q4 2026
+        { quarter: 'Q4', vendor: 'DevLearn', amount: 12000, status: 'Confirmed', gl: '6405', dept: '402-Corp Marketing', date: '11/04/2026', memo: '10x10 booth — full estimate $19,425', category: 'Programs', subcategory: 'Conferences/Events', month: 'Nov' },
+    ];
+    appState.recurringCommitments = [
+        { vendor: 'LinkedIn Ads', monthlyAmount: 950, category: 'Programs', subcategory: 'Advertising', gl: '6406', startMonth: 3, endMonth: 11 },
+        { vendor: 'Google Ads', monthlyAmount: 850, category: 'Programs', subcategory: 'Advertising', gl: '6406', startMonth: 3, endMonth: 11 },
+        { vendor: 'Paperclip Promotions', monthlyAmount: 300, category: 'Programs', subcategory: 'Conferences/Events', gl: '6405', startMonth: 3, endMonth: 11 },
+    ];
+
     appState.config = {
         total_budget: '446914', headcount_budget: '336000', programs_budget: '90000', te_budget: '20000',
         company_sw_budget: '871560', marketing_sw_savings: '213623', sw_savings_pct: '24.5%',
@@ -664,6 +718,26 @@ function recompute() {
 function getFilteredTransactions() {
     if (appState.audienceFilter === 'full') return appState.transactions;
     if (appState.audienceFilter === 'team') return appState.transactions.filter(t => t.category !== 'Headcount');
+    if (appState.audienceFilter === 'cfo') {
+        // CFO sees all non-headcount transactions as-is.
+        // For headcount: aggregate per-month into synthetic "Marketing Headcount" rows.
+        const nonHC = appState.transactions.filter(t => t.category !== 'Headcount');
+        const hcTx = appState.transactions.filter(t => t.category === 'Headcount');
+        const monthAgg = {};
+        hcTx.forEach(t => {
+            const key = t.month + '-' + t.year;
+            if (!monthAgg[key]) monthAgg[key] = { month: t.month, year: t.year, quarter: t.quarter, amount: 0 };
+            monthAgg[key].amount += t.amount;
+        });
+        const synthHC = Object.values(monthAgg).map((agg, i) => ({
+            _row: 90000 + i, date: agg.month + ' ' + agg.year, vendor: 'Marketing Headcount',
+            amount: agg.amount, gl: '6101', glName: 'Headcount', department: '400-Marketing',
+            memo: 'Aggregated headcount', category: 'Headcount', subcategory: 'Salary',
+            month: agg.month, quarter: agg.quarter, year: agg.year,
+            status: 'Actual', isCarryover: false, employeeType: ''
+        }));
+        return [...nonHC, ...synthHC];
+    }
     return appState.transactions;
 }
 function getFilteredBudget() {
@@ -1044,15 +1118,377 @@ function renderDashboardCharts() {
 function destroyChart(name) { if (appState.charts[name]) { appState.charts[name].destroy(); appState.charts[name] = null; } }
 
 // ============================================================
-// 16. BUDGET TAB — MONTHLY SPREADSHEET
+// 16. BUDGET TAB — QUARTERLY DETAIL + MONTHLY SPREADSHEET
 // ============================================================
+
+// Auto-detect default quarter: most recent completed quarter, or Q1 if early in year
+function getDefaultQuarter() {
+    const now = new Date();
+    const curMonth = now.getMonth(); // 0-indexed
+    const curDay = now.getDate();
+    const curQIdx = Math.floor(curMonth / 3); // 0=Q1, 1=Q2, 2=Q3, 3=Q4
+    // If less than 15 days into current quarter, show previous quarter
+    const monthInQ = curMonth % 3;
+    const daysIntoQ = monthInQ * 30 + curDay;
+    if (daysIntoQ < 15 && curQIdx > 0) return 'Q' + curQIdx;
+    return 'Q' + (curQIdx + 1);
+}
+
+// Get quarter months for a given quarter code
+function getQuarterMonths(q) {
+    if (q === 'Q4_2025') return { months: ['Oct', 'Nov', 'Dec'], year: 2025 };
+    if (q === 'Q1') return { months: ['Jan', 'Feb', 'Mar'], year: 2026 };
+    if (q === 'Q2') return { months: ['Apr', 'May', 'Jun'], year: 2026 };
+    if (q === 'Q3') return { months: ['Jul', 'Aug', 'Sep'], year: 2026 };
+    if (q === 'Q4') return { months: ['Oct', 'Nov', 'Dec'], year: 2026 };
+    return null;
+}
+
+// Filter transactions for a given quarter selection
+function filterByQuarter(tx, q) {
+    if (q === 'Q4_2025') return tx.filter(t => t.year === 2025 && t.quarter === 'Q4');
+    if (q === 'YTD') return tx.filter(t => t.year === 2026 && monthIdx(t.month) <= getCurrentMonthIdx());
+    if (q === 'FULL') return tx.filter(t => t.year === 2026);
+    return tx.filter(t => t.year === 2026 && t.quarter === q);
+}
+
+// Get planned items for a given quarter (committed events + recurring)
+function getPlannedItemsForQuarter(q) {
+    const items = [];
+    const curMonthIdx = getCurrentMonthIdx();
+    const qInfo = getQuarterMonths(q);
+    if (!qInfo || qInfo.year < 2026) return items;
+
+    // Committed events for this quarter
+    if (appState.committedEvents) {
+        appState.committedEvents.filter(e => e.quarter === q).forEach(e => {
+            items.push({
+                _planned: true, date: e.date, vendor: e.vendor, amount: e.amount,
+                gl: e.gl, glName: e.subcategory, department: e.dept, memo: e.memo,
+                category: e.category, subcategory: e.subcategory, month: e.month,
+                quarter: q, year: 2026, status: e.status, _status: e.status
+            });
+        });
+    }
+
+    // Recurring commitments — aggregate per month within this quarter
+    if (appState.recurringCommitments) {
+        appState.recurringCommitments.forEach(rc => {
+            let qTotal = 0;
+            qInfo.months.forEach(m => {
+                const mi = monthIdx(m);
+                if (mi >= rc.startMonth && mi <= rc.endMonth && mi > curMonthIdx) {
+                    qTotal += rc.monthlyAmount;
+                }
+            });
+            if (qTotal > 0) {
+                items.push({
+                    _planned: true, _recurring: true, date: qInfo.months[0] + ' 2026',
+                    vendor: rc.vendor, amount: qTotal,
+                    gl: rc.gl, glName: rc.subcategory, department: '', memo: 'Recurring (' + fmt(rc.monthlyAmount) + '/mo)',
+                    category: rc.category, subcategory: rc.subcategory, month: qInfo.months[0],
+                    quarter: q, year: 2026, status: 'Planned', _status: 'Planned'
+                });
+            }
+        });
+    }
+
+    // Deduplicate: if a committed event vendor matches an actual transaction, reduce planned amount
+    return items;
+}
+
+// Get quarterly budget from budget row
+function getQuarterBudget(budgetRow, q) {
+    if (!budgetRow || !budgetRow.months) return 0;
+    if (q === 'Q4_2025') return 0;
+    if (q === 'FULL') return budgetRow.annual;
+    if (q === 'YTD') {
+        const curIdx = getCurrentMonthIdx();
+        return CONFIG.MONTHS.slice(0, curIdx + 1).reduce((s, m) => s + (budgetRow.months[m] || 0), 0);
+    }
+    const qInfo = getQuarterMonths(q);
+    if (!qInfo) return 0;
+    return qInfo.months.reduce((s, m) => s + (budgetRow.months[m] || 0), 0);
+}
+
+// Category lookup from GL code
+function getCategoryForGL(gl) {
+    const info = CONFIG.GL_MAP[gl];
+    return info ? info.cat : 'Programs';
+}
+
+// Group transactions by subcategory
+function groupBySubcategory(txns, planned, cat, showIndivHC) {
+    const subs = {};
+    // Add actual transactions
+    txns.forEach(t => {
+        const sub = t.subcategory || t.glName || 'Other';
+        if (!subs[sub]) subs[sub] = [];
+        subs[sub].push(t);
+    });
+    // Add planned items (avoid duplicating vendors that already have actuals)
+    planned.forEach(p => {
+        const sub = p.subcategory || 'Other';
+        if (!subs[sub]) subs[sub] = [];
+        // Check if this planned vendor already has actuals in this subcategory
+        const hasActual = subs[sub].some(t => !t._planned && matchVendor(p.vendor, t.vendor));
+        if (!hasActual || !p._recurring) {
+            subs[sub].push(p);
+        }
+    });
+    // For CFO mode headcount: aggregate to single entries
+    if (cat === 'Headcount' && !showIndivHC) {
+        const aggSub = {};
+        Object.entries(subs).forEach(([sub, items]) => {
+            const total = items.reduce((s, t) => s + t.amount, 0);
+            if (!aggSub[sub]) aggSub[sub] = [];
+            aggSub[sub].push({
+                _row: 0, date: '', vendor: 'Marketing Headcount', amount: total,
+                gl: items[0].gl, glName: sub, department: '400-Marketing',
+                memo: 'Aggregated', category: 'Headcount', subcategory: sub,
+                month: '', quarter: '', year: 2026, status: 'Actual'
+            });
+        });
+        return aggSub;
+    }
+    return subs;
+}
+
+// Sort subcategories with preferred order
+function sortSubcategories([a], [b]) {
+    const order = ['Salary', 'Payroll Tax', 'Benefits', 'Bonus', 'Commissions', 'Consulting', 'Conferences/Events', 'Advertising', 'Lodging', 'Meals', 'Travel', 'Software Subscriptions', 'Prepaid', 'Other'];
+    const ai = order.indexOf(a); const bi = order.indexOf(b);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.localeCompare(b);
+}
+
+// Check if a quarter is in the future (has planned items but may lack actuals)
+function isQuarterFuture(q) {
+    const curMonthIdx = getCurrentMonthIdx();
+    const qInfo = getQuarterMonths(q);
+    if (!qInfo || qInfo.year < 2026) return false;
+    const firstMonthIdx = monthIdx(qInfo.months[0]);
+    return firstMonthIdx > curMonthIdx;
+}
+
+// Quarter label for display
+function quarterLabel(q) {
+    if (q === 'Q4_2025') return "Q4 '25";
+    if (q === 'YTD') return 'Year to Date';
+    if (q === 'FULL') return 'Full Year 2026';
+    return q + ' 2026';
+}
+
+// Check which quarters have data
+function quarterHasData(q) {
+    const filtered = filterByQuarter(appState.transactions, q);
+    if (filtered.length > 0) return true;
+    if (q !== 'Q4_2025' && q !== 'YTD' && q !== 'FULL') {
+        return getPlannedItemsForQuarter(q).length > 0;
+    }
+    return false;
+}
+
 function renderCalendar() {
     const el = document.getElementById('tab-budget');
     if (appState.calendarMonth) {
         el.innerHTML = renderCalendarMonthly();
-    } else {
+    } else if (appState.budgetView === 'monthly') {
         el.innerHTML = renderMonthlySpreadsheet();
+    } else {
+        // Default: quarterly detail view
+        if (!appState.budgetQuarter) appState.budgetQuarter = getDefaultQuarter();
+        el.innerHTML = renderQuarterlyDetail();
     }
+}
+
+function renderQuarterlyDetail() {
+    const q = appState.budgetQuarter;
+    const allTx = getFilteredTransactions();
+    const showHC = isHeadcountVisible();
+    const showIndivHC = shouldShowIndividualHC();
+    const isFuture = isQuarterFuture(q);
+
+    // 1. Filter transactions to selected quarter
+    const filtered = filterByQuarter(allTx, q);
+
+    // 2. Get planned items for future quarters
+    const planned = (q !== 'Q4_2025' && q !== 'YTD') ? getPlannedItemsForQuarter(q) : [];
+
+    // 3. Define category order (respecting audience)
+    const cats = showHC
+        ? ['Programs', 'T&E', 'Headcount', 'Outside Envelope']
+        : ['Programs', 'T&E', 'Outside Envelope'];
+
+    // 4. Build toolbar + summary bar
+    let html = renderBudgetToolbar(q);
+    html += renderBudgetSummaryBar(q, filtered, planned);
+
+    // 5. Build detail table
+    html += '<div class="table-container"><div class="table-scroll">';
+    html += '<table class="budget-detail-table"><thead><tr>';
+    html += '<th style="width:24px"></th><th>Date</th><th>Vendor</th><th>Description</th>';
+    html += '<th>GL</th><th>Department</th><th class="num">Amount</th></tr></thead><tbody>';
+
+    let grandTotal = 0;
+
+    cats.forEach(cat => {
+        const catTx = filtered.filter(t => t.category === cat);
+        const catPlanned = planned.filter(p => p.category === cat);
+        const catTotal = catTx.reduce((s, t) => s + t.amount, 0);
+        const catPlannedTotal = catPlanned.reduce((s, p) => s + p.amount, 0);
+        const catAllTotal = catTotal + catPlannedTotal;
+        const budgetRow = appState.budget.find(b => b.category === cat);
+        const quarterBudget = budgetRow ? getQuarterBudget(budgetRow, q) : 0;
+        const isCollapsed = appState.budgetCollapsed[cat];
+        const inGrandTotal = (cat !== 'Outside Envelope');
+
+        // Category header row
+        const toggleIcon = isCollapsed ? '&#9654;' : '&#9660;';
+        const toggleCls = isCollapsed ? 'collapsed' : '';
+        html += `<tr class="category-row" onclick="toggleBudgetCategory('${esc(cat)}')">`;
+        html += `<td class="expand-toggle ${toggleCls}">${toggleIcon}</td>`;
+        html += `<td colspan="4">${esc(cat.toUpperCase())}</td>`;
+        html += `<td class="num budget-col">${quarterBudget ? 'Budget: ' + fmtWhole(quarterBudget) : ''}</td>`;
+        html += `<td class="num">${fmt(catAllTotal)}</td></tr>`;
+
+        if (!isCollapsed) {
+            // Group by subcategory
+            const subs = groupBySubcategory(catTx, catPlanned, cat, showIndivHC);
+
+            Object.entries(subs).sort(sortSubcategories).forEach(([subName, items]) => {
+                const subTotal = items.reduce((s, item) => s + item.amount, 0);
+
+                // Subcategory header
+                html += `<tr class="subcategory-row"><td></td><td colspan="5">${esc(subName)}</td><td class="num"></td></tr>`;
+
+                // Transaction/planned rows sorted by date
+                items.sort((a, b) => {
+                    if (a._planned && !b._planned) return 1;
+                    if (!a._planned && b._planned) return -1;
+                    return new Date(a.date) - new Date(b.date);
+                }).forEach(item => {
+                    if (item._planned) {
+                        const statusCls = item._status === 'On Hold' ? 'on-hold' : (item._status === 'Tentative' ? 'tentative' : 'planned');
+                        let chipHtml = '';
+                        if (item._status === 'On Hold') chipHtml = ' <span class="status-chip hold">ON HOLD</span>';
+                        else if (item._status === 'Tentative') chipHtml = ' <span class="status-chip tentative">TENTATIVE</span>';
+                        else if (item._status === 'Confirmed') chipHtml = ' <span class="status-chip confirmed">CONFIRMED</span>';
+                        const rowCls = item._status === 'On Hold' ? 'transaction-row on-hold' : 'transaction-row planned';
+                        html += `<tr class="${rowCls}">`;
+                        html += `<td></td>`;
+                        html += `<td class="planned-date">${esc(item.date)}</td>`;
+                        html += `<td>${esc(item.vendor)}${chipHtml}</td>`;
+                        html += `<td>${esc(item.memo)}</td>`;
+                        html += `<td>${esc(item.gl)}</td>`;
+                        html += `<td>${esc(item.department)}</td>`;
+                        html += `<td class="num planned-amount${item._status === 'On Hold' ? ' muted' : ''}">${fmt(item.amount)}</td></tr>`;
+                    } else {
+                        html += `<tr class="transaction-row" oncontextmenu="showContextMenu(event,${item._row})">`;
+                        html += `<td></td>`;
+                        html += `<td>${esc(item.date)}</td>`;
+                        html += `<td>${esc(item.vendor)}</td>`;
+                        html += `<td>${esc(item.memo)}</td>`;
+                        html += `<td>${esc(item.gl)}</td>`;
+                        html += `<td>${esc(item.department)}</td>`;
+                        html += `<td class="num">${fmt(item.amount)}</td></tr>`;
+                    }
+                });
+
+                // Subcategory subtotal
+                if (items.length > 1) {
+                    html += `<tr class="subtotal-row"><td></td><td colspan="5">Subtotal: ${esc(subName)}</td><td class="num">${fmt(subTotal)}</td></tr>`;
+                }
+            });
+        }
+
+        // Category total with budget comparison
+        const variance = catAllTotal - quarterBudget;
+        html += `<tr class="category-total-row"><td></td>`;
+        html += `<td colspan="3">TOTAL ${esc(cat.toUpperCase())}</td>`;
+        html += `<td class="num budget-comparison">${quarterBudget ? fmtWhole(quarterBudget) : ''}</td>`;
+        if (quarterBudget) {
+            html += `<td class="num variance ${variance > 0 ? 'positive' : 'negative'}">${variance > 0 ? '+' : ''}${fmtWhole(variance)}</td>`;
+        } else {
+            html += `<td></td>`;
+        }
+        html += `<td class="num">${fmt(catAllTotal)}</td></tr>`;
+
+        if (inGrandTotal) grandTotal += catAllTotal;
+    });
+
+    // Grand total
+    html += `<tr class="grand-total-row"><td></td>`;
+    html += `<td colspan="5">GRAND TOTAL — ALL MARKETING ${quarterLabel(q).toUpperCase()}</td>`;
+    html += `<td class="num">${fmt(grandTotal)}</td></tr>`;
+    html += '</tbody></table></div></div>';
+
+    return html;
+}
+
+function renderBudgetToolbar(q) {
+    const quarters = ['Q4_2025', 'Q1', 'Q2', 'Q3', 'Q4'];
+    const labels = { 'Q4_2025': "Q4 '25", 'Q1': 'Q1', 'Q2': 'Q2', 'Q3': 'Q3', 'Q4': 'Q4' };
+    let html = '<div class="budget-toolbar">';
+    // View toggle
+    html += '<div class="view-toggle">';
+    html += `<button class="view-btn ${appState.budgetView === 'quarterly' ? 'active' : ''}" onclick="switchBudgetView('quarterly')">Quarterly Detail</button>`;
+    html += `<button class="view-btn ${appState.budgetView === 'monthly' ? 'active' : ''}" onclick="switchBudgetView('monthly')">Monthly Summary</button>`;
+    html += '</div>';
+    // Quarter selector
+    html += '<div class="quarter-selector">';
+    quarters.forEach(qk => {
+        const hasData = quarterHasData(qk);
+        html += `<button class="quarter-btn ${q === qk ? 'active' : ''} ${hasData ? 'has-data' : ''}" onclick="selectBudgetQuarter('${qk}')">${labels[qk]}</button>`;
+    });
+    html += '<span class="quarter-sep">|</span>';
+    html += `<button class="quarter-btn ${q === 'YTD' ? 'active' : ''}" onclick="selectBudgetQuarter('YTD')">YTD</button>`;
+    html += `<button class="quarter-btn ${q === 'FULL' ? 'active' : ''}" onclick="selectBudgetQuarter('FULL')">Full Year</button>`;
+    html += '</div>';
+    // Source label
+    html += '<span class="source-label">Source: NetSuite GL</span>';
+    html += '</div>';
+    return html;
+}
+
+function renderBudgetSummaryBar(q, filtered, planned) {
+    const totalSpend = filtered.reduce((s, t) => s + t.amount, 0);
+    const plannedTotal = (planned || []).reduce((s, p) => s + p.amount, 0);
+    const progTx = filtered.filter(t => t.category === 'Programs');
+    const progSpend = progTx.reduce((s, t) => s + t.amount, 0);
+    const progBudgetRow = appState.budget.find(b => b.category === 'Programs');
+    const progQBudget = progBudgetRow ? getQuarterBudget(progBudgetRow, q) : 0;
+    const progAvailable = CONFIG.BUDGET.programs - appState.computed.ytdActual.programs - appState.computed.outstandingItems.filter(t => t.category === 'Programs').reduce((s, t) => s + t.amount, 0) - appState.computed.forecast.programs;
+    const progAvailCls = progAvailable > 10000 ? 'positive' : progAvailable > 0 ? 'warning' : 'negative';
+
+    let html = '<div class="budget-summary-bar">';
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">Annual Budget</span><span class="budget-summary-value">${fmtWhole(CONFIG.BUDGET.total)}</span></div>`;
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">${quarterLabel(q)} Spend</span><span class="budget-summary-value">${fmtWhole(totalSpend)}</span></div>`;
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">Budget Programs</span><span class="budget-summary-value">${fmtWhole(CONFIG.BUDGET.programs)}</span></div>`;
+    html += `<div class="budget-summary-item"><span class="budget-summary-label">Programs Spent</span><span class="budget-summary-value">${fmtWhole(progSpend)}</span></div>`;
+    html += `<div class="budget-summary-item highlight"><span class="budget-summary-label">Programs Available</span><span class="budget-summary-value ${progAvailCls}">${fmtWhole(progAvailable)}</span></div>`;
+    html += '</div>';
+    return html;
+}
+
+function switchBudgetView(view) {
+    appState.budgetView = view;
+    appState.calendarMonth = null;
+    renderCalendar();
+}
+
+function selectBudgetQuarter(q) {
+    appState.budgetQuarter = q;
+    appState.budgetView = 'quarterly';
+    appState.calendarMonth = null;
+    renderCalendar();
+}
+
+function toggleBudgetCategory(cat) {
+    appState.budgetCollapsed[cat] = !appState.budgetCollapsed[cat];
+    renderCalendar();
 }
 
 function renderMonthlySpreadsheet() {
@@ -1560,10 +1996,24 @@ function renderExpenses() {
     }
     const showHC = isHeadcountVisible();
     const isPres = appState.presentationMode;
+
+    // Quarter button bar
     let html = '<div class="filter-bar">';
+    html += '<div class="quarter-selector">';
+    const expQtrs = [
+        { val: '', label: 'All' },
+        { val: 'Q4 2025', label: "Q4 '25" },
+        { val: 'Q1 2026', label: 'Q1' },
+        { val: 'Q2 2026', label: 'Q2' },
+        { val: 'Q3 2026', label: 'Q3' },
+        { val: 'Q4 2026', label: 'Q4' }
+    ];
+    expQtrs.forEach(qo => {
+        html += `<button class="quarter-btn ${f.quarter === qo.val ? 'active' : ''}" onclick="updateTxFilter('quarter','${qo.val}')">${qo.label}</button>`;
+    });
+    html += '</div>';
     html += `<input type="text" class="filter-input" placeholder="Search vendor, memo, GL..." value="${esc(f.search)}" oninput="updateTxFilter('search', this.value)">`;
     html += `<select class="filter-select" onchange="updateTxFilter('category', this.value)"><option value="">All Categories</option>${showHC ? '<option value="Headcount"' + (f.category === 'Headcount' ? ' selected' : '') + '>Headcount</option>' : ''}<option value="Programs" ${f.category === 'Programs' ? 'selected' : ''}>Programs</option><option value="T&E" ${f.category === 'T&E' ? 'selected' : ''}>T&E</option><option value="Outside Envelope" ${f.category === 'Outside Envelope' ? 'selected' : ''}>Outside Envelope</option></select>`;
-    html += `<select class="filter-select" onchange="updateTxFilter('quarter', this.value)"><option value="">All Quarters</option><option value="Q4 2025" ${f.quarter === 'Q4 2025' ? 'selected' : ''}>Q4 2025</option><option value="Q1 2026" ${f.quarter === 'Q1 2026' ? 'selected' : ''}>Q1 2026</option><option value="Q2 2026" ${f.quarter === 'Q2 2026' ? 'selected' : ''}>Q2 2026</option><option value="Q3 2026" ${f.quarter === 'Q3 2026' ? 'selected' : ''}>Q3 2026</option><option value="Q4 2026" ${f.quarter === 'Q4 2026' ? 'selected' : ''}>Q4 2026</option></select>`;
     html += `<select class="filter-select" onchange="updateTxFilter('status', this.value)"><option value="">All Status</option><option value="Actual" ${f.status === 'Actual' ? 'selected' : ''}>Actual</option><option value="Outstanding" ${f.status === 'Outstanding' ? 'selected' : ''}>Outstanding</option></select>`;
     html += `<button class="filter-clear" onclick="clearTxFilters()">Clear</button>`;
     html += `<button class="btn btn-secondary" onclick="exportCSV()">CSV</button>`;
@@ -1574,22 +2024,38 @@ function renderExpenses() {
     const sortCls = col => appState.txSort.col !== col ? 'sortable' : 'sortable sort-' + appState.txSort.dir;
     html += `<thead><tr><th class="${sortCls('date')}" onclick="sortTx('date')">Date ${sortIcon('date')}</th><th class="${sortCls('vendor')}" onclick="sortTx('vendor')">Vendor ${sortIcon('vendor')}</th><th class="num ${sortCls('amount')}" onclick="sortTx('amount')">Amount ${sortIcon('amount')}</th><th class="${sortCls('category')}" onclick="sortTx('category')">Category ${sortIcon('category')}</th><th>Sub</th><th>GL</th><th>Dept</th><th>Memo</th><th>Status</th></tr></thead><tbody>`;
     const catOrder = showHC ? ['Headcount', 'Programs', 'T&E', 'Outside Envelope'] : ['Programs', 'T&E', 'Outside Envelope'];
-    const grouped = {}; filtered.forEach(t => { if (!grouped[t.category]) grouped[t.category] = []; grouped[t.category].push(t); });
+    // Group by category then subcategory
+    const grouped = {};
+    filtered.forEach(t => {
+        if (!grouped[t.category]) grouped[t.category] = {};
+        const sub = t.subcategory || t.glName || 'Other';
+        if (!grouped[t.category][sub]) grouped[t.category][sub] = [];
+        grouped[t.category][sub].push(t);
+    });
     catOrder.forEach(cat => {
-        const items = grouped[cat]; if (!items || items.length === 0) return;
-        const catTotal = items.reduce((s, t) => s + t.amount, 0);
-        html += `<tr class="category-row"><td colspan="9">${esc(cat)} (${items.length}) — ${fmt(catTotal)}</td></tr>`;
-        items.forEach(t => {
-            html += `<tr oncontextmenu="showContextMenu(event,${t._row})">`;
-            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'date')">${esc(t.date)}</td>`;
-            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'vendor')">${esc(t.vendor)}</td>`;
-            html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${t._row},'amount')">${fmt(t.amount)}</td>`;
-            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'category')">${categoryPill(t.category)}</td>`;
-            html += `<td>${esc(t.subcategory)}</td>`;
-            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'gl')">${esc(t.gl)}</td>`;
-            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'department')">${esc(t.department)}</td>`;
-            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'memo')">${esc(t.memo)}</td>`;
-            html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'status')">${statusPill(t.status)}</td></tr>`;
+        const catSubs = grouped[cat]; if (!catSubs) return;
+        const allItems = Object.values(catSubs).flat();
+        if (allItems.length === 0) return;
+        const catTotal = allItems.reduce((s, t) => s + t.amount, 0);
+        html += `<tr class="category-row"><td colspan="9">${esc(cat)} (${allItems.length}) — ${fmt(catTotal)}</td></tr>`;
+
+        Object.entries(catSubs).sort(sortSubcategories).forEach(([sub, items]) => {
+            if (items.length > 1 || Object.keys(catSubs).length > 1) {
+                const subTotal = items.reduce((s, t) => s + t.amount, 0);
+                html += `<tr class="subcategory-row"><td colspan="9" style="padding-left:18px">${esc(sub)} (${items.length}) — ${fmt(subTotal)}</td></tr>`;
+            }
+            items.forEach(t => {
+                html += `<tr oncontextmenu="showContextMenu(event,${t._row})">`;
+                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'date')">${esc(t.date)}</td>`;
+                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'vendor')">${esc(t.vendor)}</td>`;
+                html += `<td class="num editable-cell" ondblclick="startCellEdit(this,${t._row},'amount')">${fmt(t.amount)}</td>`;
+                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'category')">${categoryPill(t.category)}</td>`;
+                html += `<td>${esc(t.subcategory)}</td>`;
+                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'gl')">${esc(t.gl)}</td>`;
+                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'department')">${esc(t.department)}</td>`;
+                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'memo')">${esc(t.memo)}</td>`;
+                html += `<td class="editable-cell" ondblclick="startCellEdit(this,${t._row},'status')">${statusPill(t.status)}</td></tr>`;
+            });
         });
     });
     const grandTotal = filtered.reduce((s, t) => s + t.amount, 0);
@@ -1633,8 +2099,33 @@ async function saveTxModal(editRow) {
     else { appState.transactions.push(newTx); appendToSheets('Transactions!A:O', [row]); }
     recompute(); closeModal(); renderActiveTab();
 }
-function confirmDeleteTx(row) {
-    if (confirm('Delete this transaction?')) { appState.transactions = appState.transactions.filter(t => t._row !== row); recompute(); renderActiveTab(); showToast('Deleted locally', 'info'); }
+async function deleteFromSheets(sheetRow) {
+    if (!appState.accessToken || !appState.transactionsSheetId) return false;
+    try {
+        const resp = await fetch(
+            `${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}:batchUpdate`,
+            {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + appState.accessToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    requests: [{ deleteDimension: {
+                        range: { sheetId: appState.transactionsSheetId, dimension: 'ROWS',
+                                 startIndex: sheetRow - 1, endIndex: sheetRow }
+                    }}]
+                })
+            }
+        );
+        if (!resp.ok) throw new Error('Delete failed: ' + resp.status);
+        appState.transactions.forEach(t => { if (t._row > sheetRow) t._row--; });
+        return true;
+    } catch (err) { console.error(err); return false; }
+}
+async function confirmDeleteTx(row) {
+    if (!confirm('Delete this transaction?')) return;
+    const deleted = await deleteFromSheets(row);
+    appState.transactions = appState.transactions.filter(t => t._row !== row);
+    recompute(); renderActiveTab();
+    showToast(deleted ? 'Deleted from Sheets' : 'Deleted locally only', deleted ? 'success' : 'warning');
 }
 function closeModal() { document.getElementById('modalOverlay').classList.remove('active'); }
 

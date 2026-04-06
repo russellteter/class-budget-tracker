@@ -1,5 +1,5 @@
 {
-  "current_phase": "v5_monthly_spreadsheet_complete",
+  "current_phase": "v6_quarterly_detail_complete",
   "completed_tasks": [
     "Created multi-file architecture: index.html + styles.css + app.js",
     "Built complete design system with 3 themes (light/dark/high-contrast)",
@@ -34,12 +34,29 @@
     "v5: Month header click drills into transaction detail view with back button",
     "v5: Removed 3-level zoom (Annual/Quarterly/Monthly) — spreadsheet IS the view",
     "v5: recompute() uses vendorMonthly for forecast instead of commitments",
-    "v5: Dashboard cumulative chart uses vendorMonthly for forecast line"
+    "v5: Dashboard cumulative chart uses vendorMonthly for forecast line",
+    "v6: NEW Quarterly Detail View — Category > Subcategory > Transaction hierarchy with expand/collapse",
+    "v6: Budget tab now defaults to Quarterly Detail view with toggle to Monthly Summary",
+    "v6: Quarter selector buttons (Q4'25, Q1-Q4, YTD, Full Year) with auto-detect default quarter",
+    "v6: Budget summary bar showing Annual Budget, Quarter Spend, Programs Budget/Spent/Available",
+    "v6: Committed events data from Field Marketing Budget Tracker (12 events across Q2-Q4)",
+    "v6: Recurring commitments (LinkedIn Ads, Google Ads, Paperclip) shown as planned items in future quarters",
+    "v6: Planned items styled distinctly — italic, dashed border, status chips (Confirmed/On Hold/Tentative)",
+    "v6: Fixed CFO audience filter — now aggregates headcount per-month into 'Marketing Headcount' synthetic rows",
+    "v6: Fixed transaction delete persistence — deleteFromSheets() uses batchUpdate API to remove rows from Google Sheets",
+    "v6: OAuth token refresh wrapper — sheetsApiCall() retries on 401 with fresh token",
+    "v6: Expenses tab now groups by subcategory within each category",
+    "v6: Expenses tab quarter filter changed from dropdown to button bar matching Budget tab",
+    "v6: UI density overhaul — removed glassmorphic chrome in light theme, tightened spacing",
+    "v6: Removed decorative ::before gradient bars from KPI cards, chart cards, table containers",
+    "v6: Enhanced print stylesheet for quarterly detail view"
   ],
   "pending_tasks": [
-    "Connect to live Google Sheets data (requires OAuth sign-in)",
-    "Configure GitHub Pages deployment",
-    "Full QA: keyboard navigation, edge cases, error states"
+    "Configure GitHub Pages deployment (enable in repo settings)",
+    "Add authorized origin in Google Cloud Console for GitHub Pages",
+    "Build NetSuite sync runbook for automated data refresh",
+    "Full QA: edge cases, error states, keyboard navigation",
+    "Batch Import modal for Expenses tab (Phase 3C — deferred)"
   ],
   "key_decisions": [
     "Multi-file architecture (index.html + styles.css + app.js) instead of single file",
@@ -52,13 +69,17 @@
     "v5: Monthly spreadsheet replaces quarterly grid — every cell has one value, not dual budget|actual",
     "v5: Forecast = sum of vendorMonthly future months (not commitment * remaining months)",
     "HubSpot ($50,340) and Outreach ($15,054) are upcoming negotiations — SW tab models target amounts",
-    "Headcount includes 'Other Marketing Payroll' entries for dept-wide salary beyond named individuals"
+    "Headcount includes 'Other Marketing Payroll' entries for dept-wide salary beyond named individuals",
+    "v6: Quarterly Detail is the default Budget tab view — answers 'what was spent by category this quarter'",
+    "v6: Monthly Summary (old spreadsheet) kept as toggle for month-by-month vendor-level view",
+    "v6: Light theme removes glassmorphism (--glass-blur: 0px), dark theme retains it",
+    "v6: Removed Scenario and CFO Reconciliation tabs per Russell's scope decision"
   ],
   "blockers": [],
   "file_manifest": {
-    "index.html": "HTML shell (100 lines) - CDN links, 4-tab structure, modal, drilldown, toast",
-    "styles.css": "Design system (~692 lines) - variables, themes, sticky columns, forecast hatching, all components",
-    "app.js": "Application logic (1801 lines) - vendorMonthly data model, monthly spreadsheet, inline editing, 4 tab renderers, charts"
+    "index.html": "HTML shell (107 lines) - CDN links, 4-tab structure, modal, drilldown, toast",
+    "styles.css": "Design system (~831 lines) - variables, themes, quarterly detail CSS, sticky columns, forecast hatching, print styles",
+    "app.js": "Application logic (~2369 lines) - quarterly detail view, vendorMonthly, inline editing, committed events, CFO filter fix, token refresh"
   },
-  "last_updated": "2026-04-03T14:00:00Z"
+  "last_updated": "2026-04-05T22:18:00Z"
 }
