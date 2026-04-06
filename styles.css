@@ -101,6 +101,10 @@
     --header-gradient: linear-gradient(135deg, #000 0%, #1a1a3a 100%);
     --shadow-sm: 0 0 0 1px var(--border-color); --shadow-md: 0 0 0 2px var(--border-color);
     --glass-bg: rgba(26,26,26,1); --glass-border: var(--border-color); --glass-blur: 0px;
+    --thead-gradient-start: #1a1a3a; --thead-gradient-end: #1a1a1a;
+    --thead-hover: #2a2a5a;
+    --pill-te-text: var(--accent); --pill-outstanding-text: var(--accent);
+    --primary-dark: #5c5cf0;
 }
 [data-theme="high-contrast"] .app-header { background: #000; border-bottom: 2px solid var(--border-color); }
 [data-theme="high-contrast"] .kpi-card, [data-theme="high-contrast"] .chart-card,
@@ -598,23 +602,191 @@ tr.editing-row { background: rgba(71,57,231,0.03) !important; }
 .presentation-mode thead th { font-size: 10px; }
 .presentation-mode td.editable-cell { cursor: default; outline: none !important; }
 
-/* --- Print --- */
+/* --- Print Stylesheet — Clean Financial Report ---
+   Produces a professional Budget tab printout with proper
+   page margins, visible table structure, and hidden chrome.
+   ---------------------------------------------------- */
 @media print {
-    .app-header, .tab-nav, .filter-bar, .icon-btn, .auth-container, .toast-container,
-    .modal-overlay, .drilldown-overlay, .loading-overlay, .btn, .context-menu,
-    .budget-toolbar, .view-toggle, .quarter-selector, .source-label { display: none !important; }
-    body { background: #fff; color: #000; font-size: 10px; }
-    .main-content { padding: 0; max-width: 100%; }
-    .tab-content { display: block !important; page-break-inside: avoid; }
-    .kpi-card, .chart-card, .table-container, .section-card { box-shadow: none; border: 1px solid #ccc; backdrop-filter: none; break-inside: avoid; }
-    .budget-summary-bar { border: 1px solid #ccc; }
-    .budget-summary-item { border-right: 1px solid #ccc; }
-    .budget-detail-table .category-row { background: #f0f0f0 !important; }
-    .budget-detail-table .category-total-row td { border-top: 2px solid #000; background: #f5f5f5 !important; }
-    .budget-detail-table .grand-total-row td { border-top: 3px double #000; background: #eee !important; }
-    .expand-toggle { display: none; }
-    .budget-detail-table .transaction-row.planned td { border-left: 2px dashed #999; }
-    .status-chip { border: 1px solid #ccc; }
+    /* Page setup */
+    @page {
+        size: landscape;
+        margin: 0.5in 0.4in;
+    }
+
+    /* 1. Hide all interactive chrome */
+    .app-header, .tab-nav, .filter-bar, .icon-btn, .auth-container,
+    .toast-container, .modal-overlay, .drilldown-overlay, .loading-overlay,
+    .btn, .context-menu, .budget-toolbar, .view-toggle, .quarter-selector,
+    .source-label, .zoom-bar, .zoom-btn, .toggle-btn, .cal-add-row,
+    .expand-toggle, .filter-clear, .assumptions-panel,
+    .presentation-badge, .data-freshness { display: none !important; }
+
+    /* 2. Reset body for print */
+    body {
+        background: #fff !important;
+        color: #000 !important;
+        font-size: 10px;
+        line-height: 1.3;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+
+    /* 3. Layout */
+    .main-content { padding: 0; max-width: 100%; margin: 0; }
+    .tab-content { display: none !important; }
+    .tab-content.active { display: block !important; }
+
+    /* 4. Cards and containers — clean borders, no shadows */
+    .kpi-card, .chart-card, .table-container, .section-card {
+        box-shadow: none !important;
+        border: 1px solid #ccc;
+        backdrop-filter: none;
+        break-inside: avoid;
+        background: #fff !important;
+    }
+
+    /* 5. KPI grid — fit on one row */
+    .kpi-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 8px;
+    }
+    .kpi-card { flex: 1; min-width: 120px; padding: 6px; }
+    .kpi-card.hero { flex: 2; }
+    .kpi-value { font-size: 14px !important; color: #000 !important; }
+    .kpi-card.hero .kpi-value { font-size: 16px !important; }
+    .kpi-label { color: #333 !important; }
+    .kpi-trend { color: #555 !important; }
+    .kpi-progress-bar.green { background: #059669 !important; }
+    .kpi-progress-bar.amber { background: #D97706 !important; }
+    .kpi-progress-bar.red { background: #DC2626 !important; }
+
+    /* 6. Budget summary bar */
+    .budget-summary-bar {
+        border: 1px solid #ccc;
+        background: #fff !important;
+        break-inside: avoid;
+    }
+    .budget-summary-item {
+        border-right: 1px solid #ccc;
+        background: #fff !important;
+    }
+    .budget-summary-item.highlight { background: #f0fdf4 !important; }
+    .budget-summary-value { color: #000 !important; }
+    .budget-summary-value.positive { color: #059669 !important; }
+    .budget-summary-value.negative { color: #DC2626 !important; }
+    .budget-summary-value.warning { color: #D97706 !important; }
+    .budget-summary-label { color: #333 !important; }
+
+    /* 7. Budget detail table — the core financial report */
+    .budget-detail-table { font-size: 10px; }
+    .budget-detail-table thead th {
+        background: #f0f0f0 !important;
+        color: #000 !important;
+        border-bottom: 2px solid #000;
+        padding: 4px 6px;
+    }
+    .budget-detail-table .category-row {
+        background: #e8e8e8 !important;
+    }
+    .budget-detail-table .category-row td {
+        font-weight: 700;
+        border-bottom: 1px solid #999;
+        padding: 5px 6px;
+    }
+    .budget-detail-table .subcategory-row td {
+        background: #f5f5f5 !important;
+        font-weight: 600;
+    }
+    .budget-detail-table .transaction-row td {
+        border-bottom: 1px solid #ddd;
+    }
+    .budget-detail-table .transaction-row.planned td {
+        border-left: 2px dashed #999;
+        font-style: italic;
+        color: #666;
+    }
+    .budget-detail-table .subtotal-row td {
+        border-top: 1px solid #999;
+        border-bottom: 1px solid #999;
+        font-weight: 600;
+    }
+    .budget-detail-table .category-total-row td {
+        border-top: 2px solid #000;
+        background: #f0f0f0 !important;
+        font-weight: 700;
+    }
+    .budget-detail-table .grand-total-row td {
+        border-top: 3px double #000;
+        background: #e0e0e0 !important;
+        font-weight: 700;
+        font-size: 11px;
+    }
+
+    /* 8. Status chips */
+    .status-chip {
+        border: 1px solid #999;
+        color: #000 !important;
+        background: #f5f5f5 !important;
+    }
+
+    /* 9. Calendar/Monthly spreadsheet table */
+    .calendar-container {
+        overflow: visible;
+        max-height: none;
+        border: 1px solid #ccc;
+    }
+    .calendar-table { font-size: 9px; }
+    .calendar-table th, .calendar-table td {
+        border: 1px solid #ddd;
+        padding: 2px 4px;
+    }
+    .calendar-table th {
+        background: #f0f0f0 !important;
+        color: #000 !important;
+    }
+    .calendar-table th.sticky-col-toggle,
+    .calendar-table td.sticky-col-toggle { display: none; }
+    .calendar-table th.sticky-col-name,
+    .calendar-table td.sticky-col-name,
+    .calendar-table th.row-label,
+    .calendar-table td.row-label-cell {
+        position: static;
+        background: #fff !important;
+    }
+    .calendar-table .category-row td { background: #e8e8e8 !important; font-weight: 700; }
+    .calendar-table .grand-total-row td { background: #e0e0e0 !important; border-top: 2px solid #000; }
+    .calendar-table td.forecast-cell {
+        background: #fafafa !important;
+        font-style: italic;
+        color: #666;
+    }
+    .calendar-table .ann-col { background: #f5f5f5 !important; }
+
+    /* 10. Chart canvases — hide (they don't print well) */
+    .chart-grid { display: none !important; }
+
+    /* 11. Pills — print-safe */
+    .pill { border: 1px solid #ccc; background: #f5f5f5 !important; color: #000 !important; }
+
+    /* 12. Amount colors */
+    .amount-negative { color: #DC2626 !important; }
+    .amount-positive { color: #000 !important; }
+    .variance.positive { color: #DC2626 !important; }
+    .variance.negative { color: #059669 !important; }
+    .cal-variance-pos { color: #059669 !important; }
+    .cal-variance-neg { color: #DC2626 !important; }
+
+    /* 13. Links and interactive elements */
+    a { text-decoration: none; color: #000; }
+    td.clickable { cursor: default; }
+    td.editable-cell { cursor: default; }
+
+    /* 14. Two/three column grids — stack for print */
+    .two-col, .three-col { display: block; }
+    .sw-card-grid { display: block; }
+    .sw-card { margin-bottom: 4px; break-inside: avoid; }
 }
 
 /* --- Utilities --- */
@@ -875,6 +1047,125 @@ tr.editing-row { background: rgba(71,57,231,0.03) !important; }
 .assumptions-panel .assumptions-list { font-size: 11px; color: var(--text-muted); padding: 8px 0 0 16px; line-height: 1.8; }
 .impact-labels { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: var(--text-muted); }
 
+/* ============================================================
+   DARK THEME — COMPLETE COMPONENT COVERAGE
+   Covers budget-toolbar, budget-summary-bar, quarter-selector,
+   zoom-bar, status-chip, cell-editor, context-menu, calendar
+   sticky columns, toggle-btn, form inputs, drilldown, basis-note,
+   assumptions, sw-card, and all glassmorphic containers.
+   ============================================================ */
+
+/* Glassmorphic containers — single consolidated rule */
+[data-theme="dark"] .kpi-card,
+[data-theme="dark"] .chart-card,
+[data-theme="dark"] .table-container,
+[data-theme="dark"] .section-card { background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); }
+
+/* Budget toolbar + view toggle + quarter selector */
+[data-theme="dark"] .budget-toolbar { border-color: var(--border-color); }
+[data-theme="dark"] .view-toggle { border-color: var(--border-color); }
+[data-theme="dark"] .view-btn + .view-btn { border-left-color: var(--border-color); }
+[data-theme="dark"] .quarter-btn { color: var(--text-muted); }
+[data-theme="dark"] .quarter-btn:hover { background: var(--primary-bg); color: var(--text-color); }
+
+/* Zoom bar */
+[data-theme="dark"] .zoom-btn { background: var(--card-bg); color: var(--text-muted); border-color: var(--border-color); }
+[data-theme="dark"] .zoom-btn:hover { background: var(--primary-bg); color: var(--text-color); }
+[data-theme="dark"] .zoom-select { background: var(--card-bg); color: var(--text-color); border-color: var(--border-color); }
+
+/* Status chips */
+[data-theme="dark"] .status-chip.hold { background: rgba(251,191,36,0.15); }
+[data-theme="dark"] .status-chip.tentative { background: rgba(139,152,165,0.15); }
+[data-theme="dark"] .status-chip.confirmed { background: rgba(34,197,94,0.15); }
+
+/* Cell editor */
+[data-theme="dark"] .cell-editor { background: var(--card-bg); color: var(--text-color); border-color: var(--primary); }
+
+/* Context menu */
+[data-theme="dark"] .context-menu { background: var(--card-bg); border-color: var(--border-color); }
+[data-theme="dark"] .context-menu-item { color: var(--text-color); }
+[data-theme="dark"] .context-menu-item:hover { background: rgba(99,102,241,0.1); }
+
+/* Calendar sticky columns */
+[data-theme="dark"] .calendar-table th.sticky-col-toggle,
+[data-theme="dark"] .calendar-table td.sticky-col-toggle { background: var(--card-bg); }
+[data-theme="dark"] .calendar-table th.sticky-col-name { background: linear-gradient(180deg, var(--thead-gradient-start) 0%, var(--thead-gradient-end) 100%); }
+[data-theme="dark"] .calendar-table td.sticky-col-name { background: var(--card-bg); }
+[data-theme="dark"] .calendar-table .category-row td.sticky-col-toggle,
+[data-theme="dark"] .calendar-table .category-row td.sticky-col-name { background: rgba(99,102,241,0.12); }
+[data-theme="dark"] .calendar-table .subcategory-row td.sticky-col-toggle,
+[data-theme="dark"] .calendar-table .subcategory-row td.sticky-col-name { background: rgba(99,102,241,0.05); }
+[data-theme="dark"] .calendar-table .grand-total-row td.sticky-col-toggle,
+[data-theme="dark"] .calendar-table .grand-total-row td.sticky-col-name { background: rgba(99,102,241,0.1); }
+[data-theme="dark"] .calendar-table td.cell,
+[data-theme="dark"] .calendar-table th.cell { border-left-color: rgba(255,255,255,0.06); }
+[data-theme="dark"] .calendar-table .ann-col { background: rgba(99,102,241,0.05); }
+
+/* Toggle button */
+[data-theme="dark"] .toggle-btn { background: var(--card-bg); border-color: var(--border-color); color: var(--text-muted); }
+
+/* Form inputs */
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-textarea { background: var(--card-bg); color: var(--text-color); border-color: var(--border-color); }
+
+/* Filter inputs */
+[data-theme="dark"] .filter-input,
+[data-theme="dark"] .filter-select { background: var(--card-bg); color: var(--text-color); border-color: var(--border-color); }
+
+/* Drilldown panel */
+[data-theme="dark"] .drilldown-panel { background: var(--glass-bg); border-left-color: var(--glass-border); }
+[data-theme="dark"] .drilldown-overlay { background: rgba(0,0,0,0.5); }
+
+/* Modal */
+[data-theme="dark"] .modal-overlay { background: rgba(0,0,0,0.6); }
+
+/* Basis note */
+[data-theme="dark"] .basis-note { background: rgba(251,191,36,0.08); border-left-color: var(--accent); }
+
+/* Assumption notes dividers */
+[data-theme="dark"] .assumption-note { border-bottom-color: rgba(255,255,255,0.06); }
+
+/* Table row stripes and hovers */
+[data-theme="dark"] tbody tr:nth-child(odd) { background: rgba(255,255,255,0.015); }
+[data-theme="dark"] tbody tr:hover { background: rgba(99,102,241,0.06); }
+[data-theme="dark"] tbody td { border-bottom-color: rgba(255,255,255,0.04); }
+
+/* SW card grid */
+[data-theme="dark"] .sw-card { background: var(--glass-bg); border-color: var(--glass-border); }
+
+/* Budget summary highlight */
+[data-theme="dark"] .budget-summary-item.highlight { background: rgba(34,197,94,0.06); }
+
+/* Editable cells */
+[data-theme="dark"] td.editable-cell:hover { background: rgba(99,102,241,0.06); outline-color: rgba(99,102,241,0.2); }
+[data-theme="dark"] td.clickable:hover { background: rgba(99,102,241,0.1); }
+[data-theme="dark"] tr.editing-row { background: rgba(99,102,241,0.05) !important; }
+
+/* Scenario tab */
+[data-theme="dark"] .scenario-summary { background: var(--primary-bg); border-color: var(--border-color); }
+[data-theme="dark"] .copy-btn { background: var(--card-bg); border-color: var(--border-color); }
+
+/* Bridge table */
+[data-theme="dark"] .bridge-table tr.bridge-start td,
+[data-theme="dark"] .bridge-table tr.bridge-result td { background: rgba(99,102,241,0.06); }
+
+/* Legend swatches */
+[data-theme="dark"] .legend-actual { background: var(--primary-bg); border-color: var(--border-color); }
+[data-theme="dark"] .legend-forecast { border-color: var(--border-color); }
+
+/* Calendar add-row */
+[data-theme="dark"] .cal-add-row td { border-color: var(--border-color); }
+[data-theme="dark"] .cal-add-row:hover td { border-color: var(--primary); background: rgba(99,102,241,0.04); }
+
+/* Draft row dark adjustment */
+[data-theme="dark"] .draft-row td { background: rgba(251,191,36,0.06) !important; }
+
+/* SW modeling cells */
+[data-theme="dark"] .sw-modeling-cell { background: rgba(251,191,36,0.08) !important; }
+[data-theme="dark"] .sw-modeling-cell:hover { background: rgba(251,191,36,0.14) !important; }
+[data-theme="dark"] .sw-modeling-cell.has-value { background: rgba(251,191,36,0.12) !important; }
+
 /* --- Global Focus Indicators for Keyboard Navigation --- */
 .audience-select:focus-visible,
 .filter-input:focus-visible,
@@ -929,3 +1220,195 @@ tr.editing-row { background: rgba(71,57,231,0.03) !important; }
 /* --- Zoom Button Hover/Active States --- */
 .zoom-btn:hover:not(.active) { background: var(--primary-bg); color: var(--primary); border-color: rgba(71, 57, 231, 0.2); }
 .zoom-btn:active:not(.active) { background: rgba(71, 57, 231, 0.12); color: var(--primary); }
+
+/* ============================================================
+   SKELETON / SHIMMER LOADING STATES
+   ============================================================ */
+.skeleton-kpi {
+    height: 80px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--glass-border);
+}
+.skeleton-kpi.hero {
+    grid-column: span 2;
+    height: 100px;
+}
+.skeleton-chart {
+    height: 200px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+}
+.skeleton-table {
+    height: 300px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+}
+.skeleton-bar {
+    height: 60px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--glass-border);
+}
+.skeleton-toolbar {
+    height: 36px;
+    border-radius: var(--radius-sm);
+    width: 40%;
+}
+.skeleton-section {
+    height: 100px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+}
+.skeleton-text {
+    height: 12px;
+    border-radius: 3px;
+    width: 60%;
+    margin-bottom: 8px;
+}
+.skeleton-text.short { width: 30%; }
+.skeleton-text.medium { width: 45%; }
+
+/* ============================================================
+   SMOOTH TRANSITIONS — Tab switches, expand/collapse, quarter changes
+   ============================================================ */
+/* Expand/collapse toggle rotation */
+.expand-toggle {
+    transition: transform 150ms ease;
+}
+.expand-toggle.collapsed {
+    transform: rotate(-90deg);
+}
+
+/* Budget summary bar items hover */
+.budget-summary-item {
+    transition: background-color 200ms ease;
+}
+.budget-summary-item:hover {
+    background: rgba(71, 57, 231, 0.02);
+}
+
+/* KPI card subtle hover lift */
+.kpi-card {
+    transition: box-shadow 200ms ease, transform 200ms ease;
+}
+.kpi-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+/* Chart card hover */
+.chart-card {
+    transition: box-shadow 200ms ease;
+}
+.chart-card:hover {
+    box-shadow: var(--shadow-md);
+}
+
+/* Section card hover */
+.section-card {
+    transition: box-shadow 200ms ease;
+}
+
+/* SW card hover */
+.sw-card {
+    transition: box-shadow 200ms ease, border-color 200ms ease;
+}
+.sw-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: rgba(71, 57, 231, 0.15);
+}
+
+/* Table container hover */
+.table-container {
+    transition: box-shadow 200ms ease;
+}
+
+/* ============================================================
+   TABLE POLISH — Better hover, row striping, column alignment
+   ============================================================ */
+/* Clearer alternating row stripes — override the default */
+tbody tr:nth-child(odd) {
+    background: rgba(71, 57, 231, 0.015);
+}
+/* Stronger hover that works on top of stripes */
+tbody tr:hover {
+    background: rgba(71, 57, 231, 0.06);
+}
+/* Clickable cell transition */
+td.clickable {
+    transition: background-color 100ms ease;
+}
+/* Budget detail transaction row transition */
+.budget-detail-table .transaction-row {
+    transition: background-color 100ms ease;
+}
+.budget-detail-table .transaction-row:hover {
+    background: rgba(71, 57, 231, 0.05);
+}
+/* Ensure numeric columns right-align in budget detail */
+.budget-detail-table td.num,
+.budget-detail-table .category-total-row td.num,
+.budget-detail-table .grand-total-row td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   CHART SIZING — Optimal desktop rendering with readable legends
+   ============================================================ */
+.chart-wrapper {
+    height: 200px;
+}
+.chart-wrapper.compact { height: 220px; }
+.chart-wrapper.tall { height: 320px; }
+.chart-card {
+    min-height: 240px;
+}
+
+/* ============================================================
+   EMPTY STATE POLISH — Quarters and tabs with no data
+   ============================================================ */
+.empty-state {
+    min-height: 200px;
+}
+.empty-state-quarter {
+    text-align: center;
+    padding: 40px 24px;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.empty-state-quarter::before {
+    content: '';
+    display: block;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 10px;
+    border-radius: 50%;
+    background: rgba(71, 57, 231, 0.06);
+    border: 1px dashed rgba(71, 57, 231, 0.2);
+}
+.empty-state-quarter p {
+    font-size: 13px;
+    max-width: 340px;
+    line-height: 1.6;
+}
+.empty-state-quarter p:first-of-type {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-color);
+    margin-bottom: 4px;
+}
+.empty-state-quarter .hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 8px;
+}
+
+/* Category row keyboard accessibility */
+.budget-detail-table .category-row:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+    background: rgba(71, 57, 231, 0.14);
+}
