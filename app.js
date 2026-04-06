@@ -13,7 +13,7 @@ const CONFIG = {
     SCOPES: 'https://www.googleapis.com/auth/spreadsheets',
     API_BASE: 'https://sheets.googleapis.com/v4/spreadsheets',
     ADMIN_EMAILS: ['russell.teter@class.com', 'russellteter@gmail.com', 'russell@classtechnologies.com'],
-    SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B'],
+    SHEET_RANGES: ['Transactions!A:O', 'Budget!A:N', 'Commitments!A:H', 'Vendor Contracts!A:H', 'Config!A:B', 'Planned Events!A:J', 'Recurring!A:F'],
     MONTHS: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
     QUARTERS: { Q1: ['Jan', 'Feb', 'Mar'], Q2: ['Apr', 'May', 'Jun'], Q3: ['Jul', 'Aug', 'Sep'], Q4: ['Oct', 'Nov', 'Dec'] },
     BUDGET: { headcount: 336914, programs: 90000, te: 20000, total: 446914 },
@@ -263,7 +263,8 @@ async function fetchAllSheets() {
         const parsers = {
             'Transactions': parseTransactions, 'Budget': parseBudget,
             'Commitments': parseCommitments, 'Vendor Contracts': parseVendorContracts,
-            'Config': parseConfig
+            'Config': parseConfig, 'Planned Events': parsePlannedEvents,
+            'Recurring': parseRecurring
         };
         // Start with fallback data as baseline, then overlay Sheets data
         loadFallbackData();
@@ -327,6 +328,38 @@ async function appendToSheets(range, values) {
     } catch (err) { console.error(err); showToast('Add failed: ' + err.message, 'error'); return false; }
 }
 
+// Ensure a sheet tab exists, create if not
+async function ensureSheetTab(tabName) {
+    if (!appState.accessToken) return;
+    try {
+        const metaResp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title`, { headers: { Authorization: 'Bearer ' + appState.accessToken } });
+        const meta = await metaResp.json();
+        const exists = (meta.sheets || []).some(s => s.properties.title === tabName);
+        if (!exists) {
+            await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}:batchUpdate`, {
+                method: 'POST', headers: { Authorization: 'Bearer ' + appState.accessToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tabName } } }] })
+            });
+        }
+    } catch (e) { console.error('Failed to ensure tab:', tabName, e); }
+}
+// Persist planned events to Google Sheets (full overwrite)
+async function persistPlannedEvents() {
+    if (!appState.accessToken) return;
+    await ensureSheetTab('Planned Events');
+    const header = ['Quarter', 'Vendor', 'Amount', 'Status', 'GL', 'Department', 'Date', 'Memo', 'Category', 'Subcategory'];
+    const rows = appState.committedEvents.map(e => [e.quarter, e.vendor, e.amount, e.status, e.gl, e.dept, e.date, e.memo, e.category, e.subcategory]);
+    await writeToSheets("'Planned Events'!A1:J" + (rows.length + 1), [header, ...rows]);
+}
+// Persist recurring commitments to Google Sheets (full overwrite)
+async function persistRecurring() {
+    if (!appState.accessToken) return;
+    await ensureSheetTab('Recurring');
+    const header = ['Vendor', 'MonthlyAmount', 'Category', 'Subcategory', 'GL', 'StartMonth', 'EndMonth'];
+    const rows = appState.recurringCommitments.map(r => [r.vendor, r.monthlyAmount, r.category, r.subcategory, r.gl, r.startMonth, r.endMonth]);
+    await writeToSheets("'Recurring'!A1:G" + (rows.length + 1), [header, ...rows]);
+}
+
 // ============================================================
 // 7. DATA PARSERS
 // ============================================================
@@ -365,6 +398,26 @@ function parseVendorContracts(rows) {
 function parseConfig(rows) {
     if (!rows || rows.length < 1) return;
     appState.config = {}; rows.forEach(r => { if (r[0]) appState.config[r[0]] = r[1] || ''; });
+}
+function parsePlannedEvents(rows) {
+    if (!rows || rows.length < 2) return;
+    appState.committedEvents = rows.slice(1).map(r => ({
+        quarter: r[0] || '', vendor: r[1] || '', amount: parseNum(r[2]), status: r[3] || 'Confirmed',
+        gl: r[4] || '6405', dept: r[5] || '', date: r[6] || '', memo: r[7] || '',
+        category: r[8] || 'Programs', subcategory: r[9] || 'Conferences/Events',
+        month: ''
+    })).filter(e => e.vendor).map(e => {
+        // Derive month from date
+        if (e.date) { const parts = e.date.split('/'); if (parts.length >= 2) e.month = CONFIG.MONTHS[parseInt(parts[0]) - 1] || ''; }
+        return e;
+    });
+}
+function parseRecurring(rows) {
+    if (!rows || rows.length < 2) return;
+    appState.recurringCommitments = rows.slice(1).map(r => ({
+        vendor: r[0] || '', monthlyAmount: parseNum(r[1]), category: r[2] || 'Programs',
+        subcategory: r[3] || '', gl: r[4] || '6405', startMonth: parseInt(r[5]) || 0, endMonth: parseInt(r[6]) || 11
+    })).filter(r => r.vendor);
 }
 function parseVendorBudgets(rows) {
     if (!rows || rows.length < 2) return;
@@ -1588,6 +1641,7 @@ function saveCommittedEvent(idx) {
         if (mk) { const key = mk.toLowerCase().substring(0, 3); vm[key] = e.amount; }
     }
     closeModal(); recompute(); renderActiveTab();
+    persistPlannedEvents();
     showToast('Updated: ' + e.vendor, 'success');
 }
 function deleteCommittedEvent(idx) {
@@ -1595,6 +1649,7 @@ function deleteCommittedEvent(idx) {
     if (!confirm('Delete ' + e.vendor + '?')) return;
     appState.committedEvents.splice(idx, 1);
     closeModal(); recompute(); renderActiveTab();
+    persistPlannedEvents();
     showToast('Deleted: ' + e.vendor, 'info');
 }
 function cycleCommittedStatus(idx) {
@@ -1604,6 +1659,7 @@ function cycleCommittedStatus(idx) {
     const cur = statuses.indexOf(e.status);
     e.status = statuses[(cur + 1) % statuses.length];
     recompute(); renderActiveTab();
+    persistPlannedEvents();
     showToast(e.vendor + ': ' + e.status, 'info');
 }
 function editRecurringCommitment(idx) {
@@ -1643,6 +1699,7 @@ function saveRecurringCommitment(idx) {
         });
     }
     closeModal(); recompute(); renderActiveTab();
+    persistRecurring();
     showToast('Updated: ' + rc.vendor + ' to ' + fmt(rc.monthlyAmount) + '/mo', 'success');
 }
 function deleteRecurringCommitment(idx) {
@@ -1650,6 +1707,7 @@ function deleteRecurringCommitment(idx) {
     if (!confirm('Delete recurring: ' + rc.vendor + '?')) return;
     appState.recurringCommitments.splice(idx, 1);
     closeModal(); recompute(); renderActiveTab();
+    persistRecurring();
     showToast('Deleted: ' + rc.vendor, 'info');
 }
 function budgetExpandAll() { appState.budgetCollapsed = {}; renderCalendar(); }
