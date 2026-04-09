@@ -1,109 +1,127 @@
 # CLAUDE.md — Class 2026 Marketing Budget Tracker
 
-## FIRST: Read These Two Documents
-
-1. **`docs/product-vision.md`** — Russell's detailed vision in his own words. Covers the calendar/timeline view, actuals vs forecast distinction, Q4 carryover argument, scenario planner, software savings narrative, audience filtering, and UI/UX requirements. This is the north star.
-2. **`docs/session-context.md`** — Complete conversation history: all decisions, the $35K gap analysis, vendor savings data, headcount details, and prioritized next steps.
-
-Read both before writing any code.
-
 ## Project Overview
 
-Interactive web application for tracking, reconciling, and managing the 2026 Class Technologies marketing budget ($446,914 envelope). Multi-file HTML/CSS/JS app backed by Google Sheets for persistence. Hosted on GitHub Pages.
+Interactive web application for tracking the 2026 Class Technologies marketing budget ($446,914 envelope). Three-tab app (Dashboard, Budget, Expenses) backed by Google Sheets for persistence, hosted on GitHub Pages.
 
-## Current State
+**Live:** https://russellteter.github.io/class-budget-tracker/
 
-- `index.html` — HTML shell with CDN links, semantic structure for all 6 tabs, modal, drill-down panel, toast container
-- `styles.css` — Complete design system: CSS variables, 3 themes (light/dark/high-contrast), glassmorphic chrome, data-dense tables, KPI cards, charts, modals, presentation mode, print stylesheet
-- `app.js` — Full application logic: Google OAuth, Sheets API (batchGet/write/append), computation engine, audience filtering (full/cfo/team), 6 tab renderers, Chart.js charts, drill-down panel, scenario planner, CSV export
-- `v1-reference.html` — Archived v1 dashboard for design reference
-- `docs/` — Architecture, data model, design system, Sheets API setup, product vision, and full session context
+## Current State (v6)
 
-## Implemented Features
+- `index.html` — HTML shell (105 lines). 3-tab structure with ARIA tablist/tab/tabpanel roles, modal, drill-down panel, toast container. Favicon is Class logo.
+- `styles.css` — Design system (~1420 lines). CSS variables for all colors/spacing, 3 themes (light/dark/high-contrast), quarterly detail table styles, status chips, print stylesheet (110+ lines for financial reports), dark theme coverage for all components.
+- `app.js` — Application logic (~2670 lines). Google OAuth with identity-based access control, Sheets API (batchGet/write/append/batchUpdate), computation engine, quarterly detail view, committed events editing with Sheets persistence, Chart.js charts, inline cell editing, CSV export.
+- `favicon.png` — Class Technologies logo for browser tab.
+- `docs/ux-audit.md` — UX research audit from frontend polish sprint.
 
-- **6 tabs**: Dashboard, Calendar, Transactions, Scenario, Reconciliation, Savings
-- **Google Sheets API**: OAuth sign-in, batchGet for reads, PUT/POST for writes, fallback data for demo
-- **3 themes**: Light (default), Dark, High Contrast via `data-theme` attribute
-- **Audience filtering**: Full/CFO/Team with DOM-level data exclusion
-- **Charts**: Programs waterfall, category doughnut, monthly trend, vendor cost comparison (Chart.js v4)
-- **Presentation mode**: larger fonts, no edit controls, Escape to exit
-- **Drill-down**: click any aggregated number to see constituent transactions
-- **Calendar**: 15-month grid (Q4 2025 + 2026), groupable by category/vendor/GL
-- **Scenario planner**: "Can I spend $X?" with impact table and copyable summary
-- **Reconciliation**: bridge walkdown from Brian's $85,309 to adjusted actuals
-- **Savings**: vendor-by-vendor comparison with company impact visualization
+## Tabs
 
-## Next Steps
+| Tab | Purpose |
+|-----|---------|
+| **Dashboard** | KPI cards (Programs Available, Spent YTD, T&E, Headcount, SW Savings) + 4 Chart.js charts (Quarterly Spend, Cumulative vs Pace, Subcategory breakdown, Monthly Actual vs Forecast) |
+| **Budget** | Quarterly Detail view (default): Category > Subcategory > Transaction hierarchy with expand/collapse. Quarter selector (Q1-Q4, YTD, Full Year). Toggle to Monthly Summary (vendor×month grid). Inline editing for actuals, modal editing for committed/recurring items. |
+| **Expenses** | Full transaction list with subcategory grouping, quarter button filter, search, category/status filters, expand/collapse, sortable columns, CSV export, + Add modal. Shows committed events as planned rows with status chips. |
 
-- Configure GitHub Pages deployment (enable in repo settings)
-- Add authorized origin `https://russellteter.github.io` in Google Cloud Console
-- Build NetSuite sync runbook for automated data refresh
-- Full QA: edge cases, error states, keyboard navigation
+## Authentication & Access Control
 
-## Business Context
+- **Not signed in**: All tabs show "Sign in to view budget data". No data loads.
+- **Admin users** (Russell): Full view — all headcount/salary details visible, audience filter dropdown shown for manual override.
+- **Other users**: Team view — no headcount data, no audience dropdown.
+- **Admin emails**: Configured in `CONFIG.ADMIN_EMAILS` — `russell.teter@class.com`, `russellteter@gmail.com`, `russell@classtechnologies.com`.
+- **Auth flow**: `handleAuthResponse()` → `fetchUserEmail()` (sets audience) → `updateAuthUI()` → `fetchAllSheets()`. Email must resolve before data loads to avoid race condition.
+- **Sign out**: Clears all data from memory, re-renders empty state.
 
-Russell Teter is VP Marketing at Class Technologies. This tool helps him:
-1. Track $446K marketing budget (Headcount $336K + Programs $90K + T&E $20K)
-2. Reconcile with CFO Brian's cash-basis view ($85K Q1 vs Russell's accrual view)
-3. Model vendor savings ($213K marketing SW savings = 24.5% of company-wide $871K)
-4. Scenario plan new spend requests with auto-generated CFO talking points
-5. Manage audience-filtered views (Full/CFO/Team)
+## Data Architecture
+
+### Sources of Truth
+- **Actual transactions**: Google Sheets `Transactions` tab → `appState.transactions[]`. Filtered to `year >= 2026` and `category !== 'Outside Envelope'` on parse.
+- **Planned events**: Google Sheets `Planned Events` tab → `appState.committedEvents[]`. Edits persist via `persistPlannedEvents()`. Falls back to hardcoded data if tab doesn't exist.
+- **Recurring commitments**: Google Sheets `Recurring` tab → `appState.recurringCommitments[]`. Edits persist via `persistRecurring()`. Falls back to hardcoded data.
+- **Vendor forecasts**: `appState.vendorMonthly[]` — one row per vendor, one value per month. Used for forecast calculation in `recompute()`.
+- **Budget allocations**: `appState.budget[]` — category annual totals with monthly breakdown.
+
+### Budget Math (recompute())
+```
+Programs Available = $90,000 - (YTD Actual + Outstanding) - Forecast
+Forecast = SUM(vendorMonthly[Programs] for months >= current month)
+```
+- Current month IS included in forecast (uses `mi >= curMonthIdx`)
+- Outstanding = transactions with `status === 'Outstanding'`
+- `CONFIG.BUDGET`: headcount $336,914 + programs $90,000 + T&E $20,000 = $446,914
+
+### Google Sheets Tabs
+| Tab | Range | Purpose |
+|-----|-------|---------|
+| Transactions | A:O | Actual expenses from NetSuite |
+| Budget | A:N | Annual/monthly budget allocations |
+| Commitments | A:H | Legacy commitments data |
+| Vendor Contracts | A:H | SW vendor portfolio |
+| Config | A:B | Key-value configuration |
+| Planned Events | A:J | Committed future events (auto-created on first save) |
+| Recurring | A:G | Recurring monthly commitments (auto-created on first save) |
 
 ## Key People
-- **Russell Teter** — VP Marketing, primary user, full access
-- **Brian** — CFO, sees cash-basis reconciliation view (no salary detail)
-- **Kate Bertram** — PT contractor, rolled into salary totals but labeled as contractor with NO loaded-cost calculations
+- **Russell Teter** — VP Marketing, primary user, admin access
+- **Kate Bertram** — PT contractor, no loaded-cost multiplier
 - **Dalton Mullins** — SDR (FTE), reduced salary from $7.5K to ~$2K/mo as of Jan 2026
 - **Kendall Woodard** — Creative & Brand (FTE), $4,583/mo
 - **Roxana Nabavian** — Mktg Ops contractor, ~$5K/mo avg
 
 ## Technical Stack
-- Single-file HTML/JS/CSS
+- Multi-file: `index.html` + `styles.css` + `app.js`
 - Chart.js v4 (CDN)
-- Google Sheets API v4
-- Google Identity Services (OAuth)
+- Google Sheets API v4 + Google Identity Services (OAuth)
 - Inter font (Google Fonts)
 - No build tools, no npm, no frameworks
-- GitHub Pages hosting
+- GitHub Pages hosting (repo must be public for free plan)
+
+## Commands
+```bash
+# Local dev
+python3 -m http.server 8000    # OAuth requires http/https origin
+
+# Deploy
+git push origin main           # GitHub Pages auto-deploys from main
+
+# Verify syntax
+node -c app.js                 # Check for JS syntax errors
+```
+
+## Important Constraints
+- No localStorage/sessionStorage — all state in JS memory, persisted to Google Sheets
+- Outside Envelope (GL 6303/6309) removed entirely — not part of marketing budget
+- Q4 2025 data removed entirely — 2026 only
+- Software tab hidden — not production ready
+- Amounts display as `$XX,XXX.XX`, negatives in red
+- Kate Bertram: contractor, no fully-loaded cost multiplier
+- Team View: headcount excluded from DOM entirely (not CSS-hidden)
+- Committed events auto-create Sheets tabs on first save via `ensureSheetTab()`
+- Token refresh: `sheetsApiCall()` wraps write operations with 401 retry
 
 ## Brand Colors
 - Navy: `#0A1849`
 - Purple: `#4739E7`
 - Gold/Accent: `#FFBA00`
-- Light purple bg: `#EDECFD`
-- Card bg: `#FFFFFF`
-- Border: `#DAD7FA`
-- Primary bg: `#F6F6FE`
+- Positive: `#059669`
+- Negative: `#DC2626`
+- Warning: `#D97706`
 
 ## File Structure
 ```
 class-budget-tracker/
-├── index.html              # HTML shell + CDN links
-├── styles.css              # Full design system (light/dark/high-contrast)
-├── app.js                  # Application logic (~2100 lines)
-├── v1-reference.html       # Archived v1 design reference
-├── CLAUDE.md               # This file
-├── README.md               # Project readme
-└── docs/
-    ├── product-vision.md   # Russell's detailed vision (START HERE)
-    ├── session-context.md  # Full conversation history & decisions
-    ├── architecture.md     # App architecture & data flow
-    ├── data-model.md       # Google Sheets schema (all 5 tabs)
-    ├── design-system.md    # Complete CSS design system from v1
-    └── sheets-setup.md     # Google API credentials setup guide
+├── index.html          # HTML shell, 3-tab structure, ARIA roles
+├── styles.css          # Design system (~1420 lines), 3 themes, print
+├── app.js              # Application logic (~2670 lines)
+├── favicon.png         # Class logo for browser tab
+├── CLAUDE.md           # This file
+├── docs/
+│   ├── product-vision.md   # Original vision doc (partially implemented)
+│   ├── session-context.md  # Historical conversation context
+│   ├── architecture.md     # App architecture & data flow
+│   ├── data-model.md       # Google Sheets schema
+│   ├── design-system.md    # CSS design system reference
+│   ├── sheets-setup.md     # Google API credentials setup
+│   └── ux-audit.md         # UX research audit report
+└── thoughts/
+    └── shared/plans/       # Implementation plans
 ```
-
-## Commands
-- No build step. Open `index.html` in browser.
-- For local dev with Sheets API, serve via `python3 -m http.server 8000` (OAuth requires http/https origin)
-- Deploy: push to main, GitHub Pages serves index.html
-
-## Important Constraints
-- No localStorage or sessionStorage — all state in memory (JS objects)
-- Multi-file architecture: `index.html` + `styles.css` + `app.js` (no build tools, no npm)
-- Amounts display as `$XX,XXX.XX`, negatives in red
-- Kate Bertram: contractor, no fully-loaded cost multiplier
-- "Outside Envelope" items (SW subs, prepaid) tracked but NOT counted against budget
-- Q4 2025 data is included for carryover context but isn't part of 2026 budget tracking
-- Team View: headcount data excluded from DOM entirely, not hidden by CSS
-- OAuth required for write access; fallback data used for demo/read-only mode
