@@ -229,7 +229,11 @@ async function fetchUserEmail() {
         appState.userEmail = d.email;
         // Set audience based on identity — admin sees everything, others see team only
         appState.audienceFilter = isAdminUser() ? 'full' : 'team';
-    } catch (e) { console.error('Failed to fetch user email:', e); }
+    } catch (e) {
+        console.error('Failed to fetch user email:', e);
+        appState.audienceFilter = 'team';
+        showToast('Could not verify identity — showing team view', 'warning');
+    }
 }
 
 // ============================================================
@@ -241,14 +245,13 @@ async function fetchAllSheets() {
     const refreshBtn = document.getElementById('refreshBtn'); refreshBtn.classList.add('spinning');
     try {
         // Discover which sheets exist, then only request those
-        const metaResp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title`, { headers: { Authorization: 'Bearer ' + appState.accessToken } });
+        const metaResp = await authedFetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title`);
         if (!metaResp.ok) throw new Error('Sheets metadata error: ' + metaResp.status);
         const meta = await metaResp.json();
         const existingTabs = (meta.sheets || []).map(s => s.properties.title);
         // Capture Transactions sheetId for delete operations
         const txSheet = (meta.sheets || []).find(s => s.properties.title === 'Transactions');
         if (txSheet) appState.transactionsSheetId = txSheet.properties.sheetId;
-        console.log('Sheets found:', existingTabs);
         // Filter ranges to only existing tabs
         const validRanges = CONFIG.SHEET_RANGES.filter(r => {
             const tabName = r.split('!')[0];
@@ -256,7 +259,7 @@ async function fetchAllSheets() {
         });
         if (validRanges.length === 0) throw new Error('No matching tabs found in spreadsheet');
         const rangesParam = validRanges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
-        const resp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values:batchGet?${rangesParam}`, { headers: { Authorization: 'Bearer ' + appState.accessToken } });
+        const resp = await authedFetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}/values:batchGet?${rangesParam}`);
         if (!resp.ok) { const body = await resp.text(); throw new Error('Sheets API error: ' + resp.status + ' ' + body); }
         const data = await resp.json(); const rd = data.valueRanges || [];
         // Map results back to parsers by tab name
@@ -266,8 +269,10 @@ async function fetchAllSheets() {
             'Config': parseConfig, 'Planned Events': parsePlannedEvents,
             'Recurring': parseRecurring
         };
-        // Start with fallback data as baseline, then overlay Sheets data
-        loadFallbackData();
+        // Initialize arrays before parsing — only Sheets data should populate state
+        appState.transactions = []; appState.budget = []; appState.vendorContracts = [];
+        appState.vendorMonthly = []; appState.vendorBudgets = []; appState.committedEvents = [];
+        appState.recurringCommitments = []; appState.config = {};
         rd.forEach(vr => {
             const tabName = (vr.range || '').split('!')[0].replace(/'/g, '');
             const parser = parsers[tabName];
@@ -282,7 +287,23 @@ async function fetchAllSheets() {
         showToast('Sheets error: ' + err.message.substring(0, 80) + '. Using fallback.', 'warning'); loadFallbackData();
     }
 }
-// Token refresh wrapper — retries on 401 with a fresh token
+// Authenticated fetch — retries once on 401 with a refreshed token
+async function authedFetch(url, options = {}) {
+    const doFetch = () => fetch(url, { ...options, headers: { ...options.headers, Authorization: 'Bearer ' + appState.accessToken } });
+    let resp = await doFetch();
+    if (resp.status === 401 && appState.tokenClient) {
+        await new Promise((resolve) => {
+            appState.tokenClient.callback = (tokenResp) => {
+                if (!tokenResp.error) appState.accessToken = tokenResp.access_token;
+                resolve();
+            };
+            appState.tokenClient.requestAccessToken();
+        });
+        resp = await doFetch();
+    }
+    return resp;
+}
+// Token refresh wrapper for write callbacks — retries on 401 with a fresh token
 async function sheetsApiCall(fn) {
     try {
         return await fn();
@@ -332,7 +353,7 @@ async function appendToSheets(range, values) {
 async function ensureSheetTab(tabName) {
     if (!appState.accessToken) return;
     try {
-        const metaResp = await fetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title`, { headers: { Authorization: 'Bearer ' + appState.accessToken } });
+        const metaResp = await authedFetch(`${CONFIG.API_BASE}/${CONFIG.SPREADSHEET_ID}?fields=sheets.properties.title`);
         const meta = await metaResp.json();
         const exists = (meta.sheets || []).some(s => s.properties.title === tabName);
         if (!exists) {
@@ -432,75 +453,9 @@ function parseVendorBudgets(rows) {
 // 8. FALLBACK DATA
 // ============================================================
 function loadFallbackData() {
-    let _fbRowId = 1000;
-    const txn = (date, vendor, amount, gl, glName, dept, memo, cat, sub, month, qtr, year, status, carry, empType) =>
-        ({ _row: _fbRowId++, date, vendor, amount, gl, glName, department: dept, memo, category: cat, subcategory: sub, month, quarter: qtr, year, status: status || 'Actual', isCarryover: carry || false, employeeType: empType || '' });
-    // --- Q1 2026 Programs ($23,230.11 from NetSuite DETAIL tab) ---
-    const q1_programs = [
-        // Sponge Software ($15,400) — GL 6402, dept 407-Mktg Leadership
-        txn('02/28/2026', 'Sponge Software', 7700, '6402', 'Consulting', '407-Mktg Leadership', 'MOPS consulting', 'Programs', 'Consulting', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Sponge Software', 7700, '6402', 'Consulting', '407-Mktg Leadership', 'Final month MOPS', 'Programs', 'Consulting', 'Mar', 'Q1', 2026, 'Outstanding'),
-        // Paperclip Promotions ($2,155.75) — GL 6405 Events
-        txn('01/31/2026', 'Paperclip Promotions', 100, '6405', 'Conferences/Events', '405-Community & Advocacy', 'Promo items', 'Programs', 'Conferences/Events', 'Jan', 'Q1', 2026),
-        txn('01/31/2026', 'Paperclip Promotions', 1081.34, '6405', 'Conferences/Events', '405-Community & Advocacy', 'Event materials', 'Programs', 'Conferences/Events', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Paperclip Promotions', 490, '6405', 'Conferences/Events', '405-Community & Advocacy', 'Promo items', 'Programs', 'Conferences/Events', 'Feb', 'Q1', 2026),
-        txn('02/28/2026', 'Paperclip Promotions', 264.41, '6405', 'Conferences/Events', '405-Community & Advocacy', 'Materials', 'Programs', 'Conferences/Events', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Paperclip Promotions', 220, '6405', 'Conferences/Events', '405-Community & Advocacy', 'Promo items', 'Programs', 'Conferences/Events', 'Mar', 'Q1', 2026),
-        // American Express Events ($2,080.46) — GL 6405
-        txn('01/31/2026', 'American Express', 1913.28, '6405', 'Conferences/Events', '402-Corp Marketing', 'Cooking class event', 'Programs', 'Conferences/Events', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'American Express', 167.18, '6405', 'Conferences/Events', '402-Corp Marketing', 'Vistaprint', 'Programs', 'Conferences/Events', 'Feb', 'Q1', 2026),
-        // LinkedIn Ads ($1,906.76) — GL 6406, via AmEx
-        txn('01/31/2026', 'LinkedIn Ads', 988.79, '6406', 'Advertising', '402-Corp Marketing', 'via AmEx', 'Programs', 'Advertising', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'LinkedIn Ads', 917.97, '6406', 'Advertising', '402-Corp Marketing', 'via AmEx', 'Programs', 'Advertising', 'Feb', 'Q1', 2026),
-        // Google Ads ($1,687.14) — GL 6406, via AmEx
-        txn('01/31/2026', 'Google Ads', 791.37, '6406', 'Advertising', '402-Corp Marketing', 'via AmEx', 'Programs', 'Advertising', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Google Ads', 895.77, '6406', 'Advertising', '402-Corp Marketing', 'via AmEx', 'Programs', 'Advertising', 'Feb', 'Q1', 2026),
-    ];
-
-    // --- Q1 2026 T&E ($7,270.65 — single Ed Miller entry) ---
-    const q1_te = [
-        txn('02/15/2026', 'Ed Miller', 7270.65, '6202', 'Lodging', '400-Marketing', 'Conference lodging', 'T&E', 'Lodging', 'Feb', 'Q1', 2026),
-    ];
-
-    // --- Q1 2026 Headcount ($133,131.77 total) ---
-    const q1_headcount = [
-        // Jan salary entries
-        txn('01/31/2026', 'Kendall Woodard', 4583.33, '6101', 'Salary', '404-Creative & Brand', 'Payroll', 'Headcount', 'Salary', 'Jan', 'Q1', 2026, 'Actual', false, 'FTE'),
-        txn('01/31/2026', 'Dalton Mullins', 9356.06, '6101', 'Salary', '408-SDRs', 'Payroll - pre-reduction rate', 'Headcount', 'Salary', 'Jan', 'Q1', 2026, 'Actual', false, 'FTE'),
-        txn('01/31/2026', 'Roxana Nabavian', 5964.00, '6101', 'Salary', '403-Mktg Ops', 'Contractor', 'Headcount', 'Salary', 'Jan', 'Q1', 2026, 'Actual', false, 'Contractor'),
-        txn('01/31/2026', 'Kate Bertram', 3120.00, '6101', 'Salary', '404-Creative & Brand', 'PT Contractor', 'Headcount', 'Salary', 'Jan', 'Q1', 2026, 'Actual', false, 'Contractor'),
-        txn('01/31/2026', 'Other Marketing Payroll', 21276.05, '6101', 'Salary', '400-Marketing', 'Dept payroll', 'Headcount', 'Salary', 'Jan', 'Q1', 2026),
-        // Feb salary entries
-        txn('02/28/2026', 'Kendall Woodard', 4583.33, '6101', 'Salary', '404-Creative & Brand', 'Payroll', 'Headcount', 'Salary', 'Feb', 'Q1', 2026, 'Actual', false, 'FTE'),
-        txn('02/28/2026', 'Dalton Mullins', 2083.33, '6101', 'Salary', '408-SDRs', 'Payroll - reduced rate', 'Headcount', 'Salary', 'Feb', 'Q1', 2026, 'Actual', false, 'FTE'),
-        txn('02/28/2026', 'Roxana Nabavian', 3362.00, '6101', 'Salary', '403-Mktg Ops', 'Contractor', 'Headcount', 'Salary', 'Feb', 'Q1', 2026, 'Actual', false, 'Contractor'),
-        txn('02/28/2026', 'Kate Bertram', 2028.00, '6101', 'Salary', '404-Creative & Brand', 'PT Contractor', 'Headcount', 'Salary', 'Feb', 'Q1', 2026, 'Actual', false, 'Contractor'),
-        txn('02/28/2026', 'Other Marketing Payroll', 21276.05, '6101', 'Salary', '400-Marketing', 'Dept payroll', 'Headcount', 'Salary', 'Feb', 'Q1', 2026),
-        // Mar salary entries
-        txn('03/31/2026', 'Kendall Woodard', 4583.33, '6101', 'Salary', '404-Creative & Brand', 'Payroll', 'Headcount', 'Salary', 'Mar', 'Q1', 2026, 'Actual', false, 'FTE'),
-        txn('03/31/2026', 'Dalton Mullins', 2083.33, '6101', 'Salary', '408-SDRs', 'Payroll - reduced rate', 'Headcount', 'Salary', 'Mar', 'Q1', 2026, 'Actual', false, 'FTE'),
-        txn('03/31/2026', 'Roxana Nabavian', 5964.00, '6101', 'Salary', '403-Mktg Ops', 'Contractor', 'Headcount', 'Salary', 'Mar', 'Q1', 2026, 'Actual', false, 'Contractor'),
-        txn('03/31/2026', 'Kate Bertram', 3120.00, '6101', 'Salary', '404-Creative & Brand', 'PT Contractor', 'Headcount', 'Salary', 'Mar', 'Q1', 2026, 'Actual', false, 'Contractor'),
-        txn('03/31/2026', 'Other Marketing Payroll', 21276.04, '6101', 'Salary', '400-Marketing', 'Dept payroll', 'Headcount', 'Salary', 'Mar', 'Q1', 2026),
-        // Payroll Tax ($7,264.63)
-        txn('01/31/2026', 'Payroll Tax', 2421.54, '6103', 'Payroll Tax', '400-Marketing', 'Tax', 'Headcount', 'Payroll Tax', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Payroll Tax', 2421.54, '6103', 'Payroll Tax', '400-Marketing', 'Tax', 'Headcount', 'Payroll Tax', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Payroll Tax', 2421.55, '6103', 'Payroll Tax', '400-Marketing', 'Tax', 'Headcount', 'Payroll Tax', 'Mar', 'Q1', 2026),
-        // Benefits ($4,844.32)
-        txn('01/31/2026', 'Benefits', 1614.77, '6104', 'Benefits', '400-Marketing', 'Benefits', 'Headcount', 'Benefits', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Benefits', 1614.77, '6104', 'Benefits', '400-Marketing', 'Benefits', 'Headcount', 'Benefits', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Benefits', 1614.78, '6104', 'Benefits', '400-Marketing', 'Benefits', 'Headcount', 'Benefits', 'Mar', 'Q1', 2026),
-        // Bonus ($1,666.66)
-        txn('01/31/2026', 'Bonus', 555.55, '6102', 'Bonus', '400-Marketing', 'Bonus', 'Headcount', 'Bonus', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Bonus', 555.55, '6102', 'Bonus', '400-Marketing', 'Bonus', 'Headcount', 'Bonus', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Bonus', 555.56, '6102', 'Bonus', '400-Marketing', 'Bonus', 'Headcount', 'Bonus', 'Mar', 'Q1', 2026),
-        // Commissions ($4,697.31)
-        txn('01/31/2026', 'Commissions', 1565.77, '6105', 'Commissions', '400-Marketing', 'Commissions', 'Headcount', 'Commissions', 'Jan', 'Q1', 2026),
-        txn('02/28/2026', 'Commissions', 1565.77, '6105', 'Commissions', '400-Marketing', 'Commissions', 'Headcount', 'Commissions', 'Feb', 'Q1', 2026),
-        txn('03/31/2026', 'Commissions', 1565.77, '6105', 'Commissions', '400-Marketing', 'Commissions', 'Headcount', 'Commissions', 'Mar', 'Q1', 2026),
-    ];
-
-    appState.transactions = [...q1_programs, ...q1_te, ...q1_headcount];
+    // Fallback provides structural defaults only — no employee names or salary data.
+    // Real data loads from Google Sheets on successful auth.
+    appState.transactions = [];
     appState.budget = [
         { category: 'Headcount', annual: 336914, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 28076.17; return o; }, {}) },
         { category: 'Programs', annual: 90000, months: CONFIG.MONTHS.reduce((o, m) => { o[m] = 7500; return o; }, {}) },

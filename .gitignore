@@ -5,3 +5,15 @@
 .env
 .env.local
 node_modules/
+
+# Binary files & screenshots
+*.pptx
+*.xlsx
+*.png
+!favicon.png
+
+# Development artifacts
+.claude/
+.playwright-mcp/
+mockups/
+thoughts/
